@@ -17,7 +17,7 @@ export default function PromoterPage() {
             
             <div>
               <h1 className="text-3xl font-black tracking-tight">
-                EDVA
+                Edva
               </h1>
 
               <p className="text-neutral-400 mt-1 text-sm">

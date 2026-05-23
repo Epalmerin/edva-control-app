@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 
@@ -15,8 +15,15 @@ type Store = {
   radius_meters: number | null;
 };
 
+type CatalogItem = {
+  id: string;
+  name: string;
+};
+
 export default function StoresPage() {
   const [stores, setStores] = useState<Store[]>([]);
+  const [chains, setChains] = useState<CatalogItem[]>([]);
+  const [brands, setBrands] = useState<CatalogItem[]>([]);
 
   const [name, setName] = useState("");
   const [chainName, setChainName] = useState("");
@@ -35,6 +42,8 @@ export default function StoresPage() {
       .select(
         "id, name, chain_name, brand_name, address, latitude, longitude, radius_meters"
       )
+      .order("chain_name", { ascending: true })
+      .order("brand_name", { ascending: true })
       .order("name", { ascending: true });
 
     if (error) {
@@ -45,19 +54,75 @@ export default function StoresPage() {
     setStores(data || []);
   };
 
+  const loadCatalogs = async () => {
+    const { data: chainsData, error: chainsError } = await supabase
+      .from("chains")
+      .select("id, name")
+      .order("name", { ascending: true });
+
+    const { data: brandsData, error: brandsError } = await supabase
+      .from("brands")
+      .select("id, name")
+      .order("name", { ascending: true });
+
+    if (chainsError) {
+      setMessage(`Error al cargar cadenas: ${chainsError.message}`);
+      return;
+    }
+
+    if (brandsError) {
+      setMessage(`Error al cargar marcas: ${brandsError.message}`);
+      return;
+    }
+
+    setChains(chainsData || []);
+    setBrands(brandsData || []);
+  };
+
   useEffect(() => {
     loadStores();
+    loadCatalogs();
   }, []);
+
+  const groupedStores = useMemo(() => {
+    const groups = new Map<string, Store[]>();
+
+    stores.forEach((store) => {
+      const chain = store.chain_name || "SIN CADENA";
+      const brand = store.brand_name || "SIN MARCA";
+      const key = `${chain}|||${brand}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+
+      groups.get(key)!.push(store);
+    });
+
+    return Array.from(groups.entries()).map(([key, items]) => {
+      const [chain, brand] = key.split("|||");
+
+      return {
+        chain,
+        brand,
+        stores: items,
+      };
+    });
+  }, [stores]);
 
   const handleSaveStore = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage("");
 
+    const cleanName = name.trim().toUpperCase();
+    const cleanChain = chainName.trim().toUpperCase();
+    const cleanBrand = brandName.trim().toUpperCase();
+
     const { error } = await supabase.from("stores").insert({
-      name,
-      chain_name: chainName,
-      brand_name: brandName,
+      name: cleanName,
+      chain_name: cleanChain,
+      brand_name: cleanBrand,
       address,
       latitude: Number(latitude),
       longitude: Number(longitude),
@@ -114,21 +179,33 @@ export default function StoresPage() {
                 required
               />
 
-              <input
+              <select
                 className="px-4 py-3 border rounded-xl"
-                placeholder="Cadena, ejemplo: Sears"
                 value={chainName}
                 onChange={(e) => setChainName(e.target.value)}
                 required
-              />
+              >
+                <option value="">Selecciona cadena</option>
+                {chains.map((chain) => (
+                  <option key={chain.id} value={chain.name}>
+                    {chain.name}
+                  </option>
+                ))}
+              </select>
 
-              <input
+              <select
                 className="px-4 py-3 border rounded-xl"
-                placeholder="Marca, ejemplo: Restonic"
                 value={brandName}
                 onChange={(e) => setBrandName(e.target.value)}
                 required
-              />
+              >
+                <option value="">Selecciona marca</option>
+                {brands.map((brand) => (
+                  <option key={brand.id} value={brand.name}>
+                    {brand.name}
+                  </option>
+                ))}
+              </select>
 
               <input
                 className="px-4 py-3 border rounded-xl"
@@ -179,39 +256,51 @@ export default function StoresPage() {
             )}
           </div>
 
-          <div className="bg-white rounded-2xl shadow-md p-6">
+          <div className="bg-white rounded-2xl shadow-md p-6 max-h-[75vh] overflow-y-auto">
             <h2 className="text-xl font-semibold text-neutral-800 mb-6">
               Tiendas registradas
             </h2>
 
-            <div className="space-y-4">
-              {stores.length === 0 && (
-                <p className="text-neutral-500 text-sm">
-                  Aún no hay tiendas registradas.
-                </p>
-              )}
+            {stores.length === 0 && (
+              <p className="text-neutral-500 text-sm">
+                Aún no hay tiendas registradas.
+              </p>
+            )}
 
-              {stores.map((store) => (
+            <div className="space-y-6">
+              {groupedStores.map((group) => (
                 <div
-                  key={store.id}
-                  className="border rounded-xl p-4 bg-neutral-50"
+                  key={`${group.chain}-${group.brand}`}
+                  className="border rounded-2xl overflow-hidden bg-neutral-50"
                 >
-                  <h3 className="font-semibold text-neutral-800">
-                    {store.name}
-                  </h3>
+                  <div className="bg-neutral-900 text-white px-5 py-4">
+                    <h3 className="font-bold text-lg">{group.chain}</h3>
+                    <p className="text-sm text-neutral-300">
+                      Marca: {group.brand} · {group.stores.length} tienda(s)
+                    </p>
+                  </div>
 
-                  <p className="text-sm text-neutral-600">
-                    {store.chain_name} / {store.brand_name}
-                  </p>
+                  <div className="p-4 space-y-3">
+                    {group.stores.map((store) => (
+                      <div
+                        key={store.id}
+                        className="border rounded-xl p-4 bg-white"
+                      >
+                        <h4 className="font-semibold text-neutral-800">
+                          {store.name}
+                        </h4>
 
-                  <p className="text-sm text-neutral-500 mt-1">
-                    {store.address}
-                  </p>
+                        <p className="text-sm text-neutral-500 mt-1">
+                          {store.address}
+                        </p>
 
-                  <p className="text-xs text-neutral-400 mt-2">
-                    GPS: {store.latitude}, {store.longitude} · Radio:{" "}
-                    {store.radius_meters} m
-                  </p>
+                        <p className="text-xs text-neutral-400 mt-2">
+                          GPS: {store.latitude}, {store.longitude} · Radio:{" "}
+                          {store.radius_meters} m
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
