@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 
@@ -23,23 +23,57 @@ type SaleRecord = {
   } | null;
 };
 
-type SummaryItem = {
+type PromoterGroup = {
+  email: string;
   name: string;
-  tickets: number;
   total: number;
+  tickets: number;
+  sales: SaleRecord[];
 };
+
+type StoreGroup = {
+  chain: string;
+  brand: string;
+  store: string;
+  total: number;
+  tickets: number;
+  promoters: PromoterGroup[];
+};
+
+const months = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
 
 export default function AdminSalesPage() {
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
+  const [selectedMonth, setSelectedMonth] = useState(
+    new Date().getMonth() + 1
+  );
+
+  const [selectedYear, setSelectedYear] = useState(
+    new Date().getFullYear()
+  );
+
   const loadSales = async () => {
     setLoading(true);
     setMessage("");
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const startDate = new Date(selectedYear, selectedMonth - 1, 1);
+    const endDate = new Date(selectedYear, selectedMonth, 1);
 
     const { data, error } = await supabase
       .from("sales_records")
@@ -61,7 +95,8 @@ export default function AdminSalesPage() {
           brand_name
         )
       `)
-      .gte("created_at", todayStart.toISOString())
+      .gte("created_at", startDate.toISOString())
+      .lt("created_at", endDate.toISOString())
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -70,17 +105,24 @@ export default function AdminSalesPage() {
       return;
     }
 
-    setSales((data || []).map((sale: any) => ({
-  ...sale,
-  profiles: Array.isArray(sale.profiles) ? sale.profiles[0] : sale.profiles,
-  stores: Array.isArray(sale.stores) ? sale.stores[0] : sale.stores,
-})));
+    setSales(
+      (data || []).map((sale: any) => ({
+        ...sale,
+        profiles: Array.isArray(sale.profiles)
+          ? sale.profiles[0]
+          : sale.profiles,
+        stores: Array.isArray(sale.stores)
+          ? sale.stores[0]
+          : sale.stores,
+      }))
+    );
+
     setLoading(false);
   };
 
   useEffect(() => {
     loadSales();
-  }, []);
+  }, [selectedMonth, selectedYear]);
 
   const totalSales = sales.reduce(
     (sum, sale) => sum + Number(sale.amount || 0),
@@ -97,210 +139,272 @@ export default function AdminSalesPage() {
     sales.map((sale) => sale.stores?.name).filter(Boolean)
   ).size;
 
-  const buildSummary = (
-    getName: (sale: SaleRecord) => string
-  ): SummaryItem[] => {
-    const map = new Map<string, SummaryItem>();
+  const groupedSales = useMemo(() => {
+    const storeMap = new Map<string, StoreGroup>();
 
     sales.forEach((sale) => {
-      const name = getName(sale);
-      const amount = Number(sale.amount || 0);
+      const chain = sale.stores?.chain_name || "SIN CADENA";
+      const brand = sale.stores?.brand_name || "SIN MARCA";
+      const store = sale.stores?.name || "SIN TIENDA";
 
-      if (!map.has(name)) {
-        map.set(name, {
-          name,
-          tickets: 0,
+      const key = `${chain}-${brand}-${store}`;
+
+      if (!storeMap.has(key)) {
+        storeMap.set(key, {
+          chain,
+          brand,
+          store,
           total: 0,
+          tickets: 0,
+          promoters: [],
         });
       }
 
-      const item = map.get(name)!;
-      item.tickets += 1;
-      item.total += amount;
+      const group = storeMap.get(key)!;
+
+      group.total += Number(sale.amount || 0);
+      group.tickets += 1;
+
+      const promoterEmail =
+        sale.profiles?.email || `PROMOTOR-${sale.id}`;
+
+      let promoter = group.promoters.find(
+        (p) => p.email === promoterEmail
+      );
+
+      if (!promoter) {
+        promoter = {
+          email: promoterEmail,
+          name: sale.profiles?.name || "Sin promotor",
+          total: 0,
+          tickets: 0,
+          sales: [],
+        };
+
+        group.promoters.push(promoter);
+      }
+
+      promoter.total += Number(sale.amount || 0);
+      promoter.tickets += 1;
+      promoter.sales.push(sale);
     });
 
-    return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  };
-
-  const salesByChain = buildSummary(
-    (sale) => sale.stores?.chain_name || "Sin cadena"
-  );
-
-  const salesByPromoter = buildSummary(
-    (sale) => sale.profiles?.name || "Sin promotor"
-  );
-
-  const salesByStore = buildSummary(
-    (sale) => sale.stores?.name || "Sin tienda"
-  );
-
-  const SummaryCard = ({
-    title,
-    items,
-  }: {
-    title: string;
-    items: SummaryItem[];
-  }) => (
-    <div className="bg-white rounded-2xl shadow-md p-6">
-      <h2 className="text-xl font-semibold text-neutral-800 mb-5">
-        {title}
-      </h2>
-
-      {items.length === 0 && (
-        <p className="text-neutral-500 text-sm">Sin información.</p>
-      )}
-
-      <div className="space-y-3">
-        {items.map((item) => (
-          <div
-            key={item.name}
-            className="border rounded-xl p-4 bg-neutral-50"
-          >
-            <div className="flex justify-between gap-4">
-              <div>
-                <h3 className="font-semibold text-neutral-800">
-                  {item.name}
-                </h3>
-
-                <p className="text-sm text-neutral-500">
-                  Tickets: {item.tickets}
-                </p>
-              </div>
-
-              <p className="font-bold text-red-500">
-                ${item.total.toLocaleString("es-MX")}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+    return Array.from(storeMap.values()).sort(
+      (a, b) => b.total - a.total
+    );
+  }, [sales]);
 
   return (
     <main className="min-h-screen bg-neutral-100 flex">
       <Sidebar userName="Eduardo Palmerin" />
 
-      <section className="flex-1 p-8">
-        <div className="flex justify-between items-start gap-4 mb-8">
+      <section className="flex-1 p-6 xl:p-8">
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-4xl font-bold text-neutral-800">
-              Ventas de hoy
+              Concentrado de ventas
             </h1>
+
             <p className="text-neutral-500 mt-2">
-              Consulta de ventas por cadena, promotor y tienda.
+              Histórico mensual por cadena, tienda y promotor.
             </p>
           </div>
 
-          <button
-            onClick={loadSales}
-            className="bg-neutral-900 hover:bg-neutral-800 text-white px-5 py-3 rounded-xl font-semibold"
-          >
-            Actualizar
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <select
+              value={selectedMonth}
+              onChange={(e) =>
+                setSelectedMonth(Number(e.target.value))
+              }
+              className="px-4 py-3 rounded-xl border bg-white"
+            >
+              {months.map((month, index) => (
+                <option key={month} value={index + 1}>
+                  {month}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedYear}
+              onChange={(e) =>
+                setSelectedYear(Number(e.target.value))
+              }
+              className="px-4 py-3 rounded-xl border bg-white"
+            >
+              {[2025, 2026, 2027].map((year) => (
+                <option key={year}>{year}</option>
+              ))}
+            </select>
+
+            <button
+              onClick={loadSales}
+              className="bg-neutral-900 hover:bg-neutral-800 text-white px-5 py-3 rounded-xl font-semibold"
+            >
+              Actualizar
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-2xl p-6 shadow-md">
-            <p className="text-neutral-500 text-sm">Total vendido</p>
-            <p className="text-4xl font-bold text-red-500 mt-3">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+          <div className="bg-white rounded-2xl p-5 shadow-md">
+            <p className="text-sm text-neutral-500">
+              Venta mensual
+            </p>
+
+            <p className="text-3xl font-bold text-red-500 mt-2">
               ${totalSales.toLocaleString("es-MX")}
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 shadow-md">
-            <p className="text-neutral-500 text-sm">Tickets</p>
-            <p className="text-4xl font-bold text-red-500 mt-3">
+          <div className="bg-white rounded-2xl p-5 shadow-md">
+            <p className="text-sm text-neutral-500">
+              Tickets
+            </p>
+
+            <p className="text-3xl font-bold text-red-500 mt-2">
               {tickets}
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 shadow-md">
-            <p className="text-neutral-500 text-sm">Promotores con venta</p>
-            <p className="text-4xl font-bold text-red-500 mt-3">
+          <div className="bg-white rounded-2xl p-5 shadow-md">
+            <p className="text-sm text-neutral-500">
+              Promotores
+            </p>
+
+            <p className="text-3xl font-bold text-red-500 mt-2">
               {promoters}
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 shadow-md">
-            <p className="text-neutral-500 text-sm">Tiendas con venta</p>
-            <p className="text-4xl font-bold text-red-500 mt-3">
+          <div className="bg-white rounded-2xl p-5 shadow-md">
+            <p className="text-sm text-neutral-500">
+              Tiendas
+            </p>
+
+            <p className="text-3xl font-bold text-red-500 mt-2">
               {storesCount}
             </p>
           </div>
         </div>
 
         {loading && (
-          <div className="bg-white rounded-2xl shadow-md p-6 mb-8">
-            <p className="text-neutral-500 text-sm">Cargando ventas...</p>
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <p className="text-neutral-500">
+              Cargando ventas...
+            </p>
           </div>
         )}
 
         {message && (
-          <div className="bg-white rounded-2xl shadow-md p-6 mb-8">
-            <p className="text-neutral-700 text-sm">{message}</p>
+          <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
+            <p className="text-neutral-700">{message}</p>
           </div>
         )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
-          <SummaryCard title="Ventas por cadena" items={salesByChain} />
-          <SummaryCard title="Ventas por promotor" items={salesByPromoter} />
-          <SummaryCard title="Ventas por tienda" items={salesByStore} />
-        </div>
+        <div className="space-y-6">
+          {groupedSales.map((group) => (
+            <div
+              key={`${group.chain}-${group.store}`}
+              className="bg-white rounded-2xl shadow-md overflow-hidden"
+            >
+              <div className="bg-neutral-900 text-white px-5 py-4">
+                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2">
+                  <div>
+                    <h2 className="text-xl font-bold">
+                      {group.store}
+                    </h2>
 
-        <div className="bg-white rounded-2xl shadow-md p-6">
-          <h2 className="text-xl font-semibold text-neutral-800 mb-6">
-            Detalle de ventas
-          </h2>
+                    <p className="text-sm text-neutral-300">
+                      {group.chain} · {group.brand}
+                    </p>
+                  </div>
 
-          {!loading && sales.length === 0 && (
-            <p className="text-neutral-500 text-sm">
-              Aún no hay ventas registradas hoy.
-            </p>
-          )}
+                  <div className="xl:text-right">
+                    <p className="text-2xl font-bold text-red-400">
+                      ${group.total.toLocaleString("es-MX")}
+                    </p>
 
-          <div className="space-y-4">
-            {sales.map((sale) => (
-              <div
-                key={sale.id}
-                className="border rounded-xl p-4 bg-neutral-50 flex flex-col md:flex-row md:items-center justify-between gap-4"
-              >
-                <div>
-                  <h3 className="font-semibold text-neutral-800">
-                    {sale.profiles?.name || "Sin promotor"}
-                  </h3>
-
-                  <p className="text-sm text-neutral-600">
-                    {sale.stores?.name || "Sin tienda"} ·{" "}
-                    {sale.stores?.chain_name || ""} /{" "}
-                    {sale.stores?.brand_name || ""}
-                  </p>
-
-                  <p className="text-sm text-neutral-500 mt-1">
-                    SKU: {sale.sku || "N/A"} · Modelo:{" "}
-                    {sale.model || "N/A"}
-                  </p>
-
-                  <p className="text-sm text-neutral-500">
-                    Ticket: {sale.ticket_number}
-                  </p>
-                </div>
-
-                <div className="text-left md:text-right">
-                  <p className="text-2xl font-bold text-red-500">
-                    ${Number(sale.amount).toLocaleString("es-MX")}
-                  </p>
-
-                  <p className="text-xs text-neutral-400 mt-1">
-                    {new Date(sale.created_at).toLocaleTimeString("es-MX", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
+                    <p className="text-sm text-neutral-300">
+                      Tickets: {group.tickets}
+                    </p>
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
+
+              <div className="divide-y">
+                {group.promoters.map((promoter) => (
+                  <div
+                    key={promoter.email}
+                    className="p-5"
+                  >
+                    <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2 mb-4">
+                      <div>
+                        <h3 className="font-bold text-lg text-neutral-800">
+                          {promoter.name}
+                        </h3>
+
+                        <p className="text-sm text-neutral-500">
+                          {promoter.email}
+                        </p>
+                      </div>
+
+                      <div className="xl:text-right">
+                        <p className="text-xl font-bold text-red-500">
+                          ${promoter.total.toLocaleString("es-MX")}
+                        </p>
+
+                        <p className="text-sm text-neutral-500">
+                          Tickets: {promoter.tickets}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {promoter.sales.map((sale) => (
+                        <div
+                          key={sale.id}
+                          className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2 text-sm border-b pb-2"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-neutral-800">
+                              Ticket: {sale.ticket_number}
+                            </span>
+
+                            <span className="text-neutral-500">
+                              SKU: {sale.sku || "N/A"}
+                            </span>
+
+                            <span className="text-neutral-500">
+                              Modelo: {sale.model || "N/A"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <span className="text-neutral-400">
+                              {new Date(
+                                sale.created_at
+                              ).toLocaleTimeString("es-MX", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+
+                            <span className="font-bold text-red-500">
+                              $
+                              {Number(
+                                sale.amount
+                              ).toLocaleString("es-MX")}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
     </main>
