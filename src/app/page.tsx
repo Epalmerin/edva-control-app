@@ -2,88 +2,95 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
-export default function Home() {
+export default function LoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
     setLoading(true);
     setMessage("");
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      setMessage("Correo o contraseña incorrectos.");
+      setMessage(error.message);
       setLoading(false);
       return;
     }
 
-    const userId = data.user?.id;
+    const { data: sessionData } = await supabase.auth.getSession();
 
-    const { data: profile, error: profileError } = await supabase
+    const userId = sessionData.session?.user.id;
+
+    const { data: profile } = await supabase
       .from("profiles")
-      .select("name, role")
+      .select("role")
       .eq("id", userId)
       .single();
 
-    if (profileError || !profile) {
-      setMessage("Usuario encontrado, pero no tiene perfil asignado.");
+    if (!profile) {
+      setMessage("No se encontró perfil.");
       setLoading(false);
       return;
     }
 
     if (profile.role === "ADMIN") {
-  window.location.href = "/admin";
-}
+      router.push("/admin");
+    } else if (profile.role === "PROMOTOR") {
+      router.push("/promoter");
+    } else if (profile.role === "SUPERVISOR") {
+      router.push("/supervisor");
+    } else if (profile.role === "RH") {
+      router.push("/rh");
+    }
 
-if (profile.role === "PROMOTOR") {
-  window.location.href = "/promoter";
-}
-
-if (profile.role === "SUPERVISOR") {
-  window.location.href = "/supervisor";
-}
-
-if (profile.role === "RH") {
-  window.location.href = "/rh";
-}
     setLoading(false);
   };
 
   return (
-    <main className="min-h-screen bg-neutral-100 flex items-center justify-center px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-neutral-800">
+    <main className="min-h-screen bg-neutral-100 flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-6 md:p-10">
+        
+        <div className="flex flex-col items-center mb-8">
+          <h1 className="text-5xl font-black tracking-tight text-neutral-900">
             ed<span className="text-red-500">va</span>
           </h1>
-          <p className="text-red-500 tracking-[0.35em] text-sm mt-2">
+
+          <p className="text-red-400 tracking-[0.35em] text-[10px] md:text-xs mt-2 text-center">
             MKT & PUBLICIDAD
           </p>
-          <h2 className="text-xl font-semibold mt-6 text-neutral-700">
+
+          <h2 className="text-2xl font-bold text-neutral-800 mt-8 text-center">
             EDVA Control App
           </h2>
-          <p className="text-sm text-neutral-500 mt-1">
+
+          <p className="text-sm text-neutral-500 mt-2 text-center">
             Control de asistencia, ventas e incidencias
           </p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <label className="text-sm font-medium text-neutral-700">
               Correo electrónico
             </label>
+
             <input
               type="email"
-              className="w-full mt-1 px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-red-400"
               placeholder="correo@edva.com"
+              className="w-full mt-2 px-4 py-4 border border-neutral-300 rounded-2xl outline-none focus:ring-2 focus:ring-red-400"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -94,10 +101,11 @@ if (profile.role === "RH") {
             <label className="text-sm font-medium text-neutral-700">
               Contraseña
             </label>
+
             <input
               type="password"
-              className="w-full mt-1 px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-red-400"
               placeholder="Tu contraseña"
+              className="w-full mt-2 px-4 py-4 border border-neutral-300 rounded-2xl outline-none focus:ring-2 focus:ring-red-400"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -107,14 +115,14 @@ if (profile.role === "RH") {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
+            className="w-full bg-red-500 hover:bg-red-600 transition text-white font-bold py-4 rounded-2xl disabled:opacity-60"
           >
             {loading ? "Ingresando..." : "Ingresar"}
           </button>
         </form>
 
         {message && (
-          <div className="mt-5 text-center text-sm font-medium text-neutral-700 bg-neutral-100 rounded-xl p-3">
+          <div className="mt-6 bg-red-50 border border-red-200 text-red-600 rounded-2xl p-4 text-sm text-center">
             {message}
           </div>
         )}
