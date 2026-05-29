@@ -70,7 +70,25 @@ const statusText: Record<string, string> = {
 };
 
 function getTodayInputDate() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+
+  const year =
+    parts.find((p) => p.type === "year")?.value || "";
+
+  const month =
+    parts.find((p) => p.type === "month")?.value || "";
+
+  const day =
+    parts.find((p) => p.type === "day")?.value || "";
+
+  return `${year}-${month}-${day}`;
 }
 
 export default function AdminAttendancePage() {
