@@ -4,14 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 
-type Assignment = {
-  employee_id: string;
-
+type AttendanceRecord = {
+  id: string;
+  type: string;
+  created_at: string;
+  photo_url: string;
+  latitude: number | null;
+  longitude: number | null;
   profiles: {
     name: string;
     email: string;
   } | null;
-
   stores: {
     name: string;
     chain_name: string | null;
@@ -19,361 +22,627 @@ type Assignment = {
   } | null;
 };
 
-type AttendanceRecord = {
-  employee_id: string;
-  type: string;
-
-  profiles: {
-    name: string;
-  } | null;
-};
-
-type PendingEmployee = {
+type PromoterGroup = {
+  email: string;
   name: string;
+  records: AttendanceRecord[];
+  lastRecord: AttendanceRecord;
+};
+
+type StoreGroup = {
   store: string;
-  chain: string;
+  promoters: PromoterGroup[];
 };
 
-type ChainSummary = {
-  chain: string;
-  total: number;
-  reported: number;
-  pending: PendingEmployee[];
+type BrandGroup = {
+  brand: string;
+  stores: StoreGroup[];
 };
 
-export default function RHPage() {
+type ChainGroup = {
+  chain: string;
+  brands: BrandGroup[];
+  promotersCount: number;
+  entries: number;
+  inBreak: number;
+  completed: number;
+};
+
+const labels: Record<string, string> = {
+  ENTRY: "Entrada",
+  BREAK_OUT: "Salida comida",
+  BREAK_IN: "Regreso comida",
+  EXIT: "Salida",
+};
+
+const statusStyles: Record<string, string> = {
+  ENTRY: "bg-green-100 text-green-700",
+  BREAK_OUT: "bg-yellow-100 text-yellow-700",
+  BREAK_IN: "bg-blue-100 text-blue-700",
+  EXIT: "bg-neutral-900 text-white",
+};
+
+const statusText: Record<string, string> = {
+  ENTRY: "Presente",
+  BREAK_OUT: "En comida",
+  BREAK_IN: "Regresó de comida",
+  EXIT: "Jornada completa",
+};
+
+function getTodayInputDate() {
+  const now = new Date();
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+
+  const year = parts.find((p) => p.type === "year")?.value || "";
+  const month = parts.find((p) => p.type === "month")?.value || "";
+  const day = parts.find((p) => p.type === "day")?.value || "";
+
+  return `${year}-${month}-${day}`;
+}
+
+function getMexicoDateRange(selectedDate: string) {
+  const start = new Date(`${selectedDate}T00:00:00-06:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+  };
+}
+
+function formatMexicoTime(date: string) {
+  return new Date(date).toLocaleTimeString("es-MX", {
+    timeZone: "America/Mexico_City",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export default function AdminAttendancePage() {
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [selectedDate, setSelectedDate] = useState(getTodayInputDate());
 
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [openChains, setOpenChains] = useState<Record<string, boolean>>({});
+  const [openBrands, setOpenBrands] = useState<Record<string, boolean>>({});
+  const [openStores, setOpenStores] = useState<Record<string, boolean>>({});
+  const [openPromoters, setOpenPromoters] = useState<Record<string, boolean>>({});
 
-  const loadData = async () => {
+  const loadAttendance = async () => {
     setLoading(true);
+    setMessage("");
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const { start, end } = getMexicoDateRange(selectedDate);
 
-    const [assignmentsResponse, attendanceResponse] =
-      await Promise.all([
-        supabase
-          .from("employee_store_assignments")
-          .select(`
-            employee_id,
+    const { data, error } = await supabase
+      .from("attendance_records")
+      .select(`
+        id,
+        type,
+        created_at,
+        photo_url,
+        latitude,
+        longitude,
+        profiles:employee_id (
+          name,
+          email
+        ),
+        stores:store_id (
+          name,
+          chain_name,
+          brand_name
+        )
+      `)
+      .gte("created_at", start)
+      .lt("created_at", end)
+      .order("created_at", { ascending: false });
 
-            profiles:employee_id (
-              name,
-              email
-            ),
-
-            stores:store_id (
-              name,
-              chain_name,
-              brand_name
-            )
-          `)
-          .eq("active", true),
-
-        supabase
-          .from("attendance_records")
-          .select(`
-            employee_id,
-            type,
-
-            profiles:employee_id (
-              name
-            )
-          `)
-          .eq("type", "ENTRY")
-          .gte("created_at", today.toISOString()),
-      ]);
-
-    if (assignmentsResponse.error) {
-      console.error(assignmentsResponse.error);
+    if (error) {
+      setMessage(`Error al cargar asistencia: ${error.message}`);
+      setLoading(false);
+      return;
     }
 
-    if (attendanceResponse.error) {
-      console.error(attendanceResponse.error);
-    }
-
-    setAssignments(
-      (assignmentsResponse.data || []).map((item: any) => ({
-        ...item,
-        profiles: Array.isArray(item.profiles)
-          ? item.profiles[0]
-          : item.profiles,
-
-        stores: Array.isArray(item.stores)
-          ? item.stores[0]
-          : item.stores,
-      }))
-    );
-
-    setAttendance(
-      (attendanceResponse.data || []).map((item: any) => ({
-        ...item,
-        profiles: Array.isArray(item.profiles)
-          ? item.profiles[0]
-          : item.profiles,
-      }))
+    // CORRECCIÓN 1: Se usa "Record<string, any>" en lugar de "any" y se hace un cast a AttendanceRecord[]
+    setRecords(
+      (data || []).map((record: Record<string, any>) => ({
+        ...record,
+        profiles: Array.isArray(record.profiles)
+          ? record.profiles[0]
+          : record.profiles,
+        stores: Array.isArray(record.stores) ? record.stores[0] : record.stores,
+      })) as AttendanceRecord[]
     );
 
     setLoading(false);
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadAttendance();
+  }, [selectedDate]);
 
-  const reportedEmployees = useMemo(() => {
-    return new Set(attendance.map((a) => a.employee_id));
-  }, [attendance]);
+  const filteredRecords = useMemo(() => {
+    if (typeFilter === "ALL") return records;
+    return records.filter((record) => record.type === typeFilter);
+  }, [records, typeFilter]);
 
-  const chainSummaries = useMemo<ChainSummary[]>(() => {
-    const map = new Map<string, ChainSummary>();
+  const promoterGroups = useMemo(() => {
+    const promoterMap = new Map<string, PromoterGroup>();
 
-    assignments.forEach((assignment) => {
-      const chain =
-        assignment.stores?.chain_name || "Sin cadena";
+    filteredRecords.forEach((record) => {
+      const email = record.profiles?.email || record.id;
+      const name = record.profiles?.name || "Sin nombre";
 
-      if (!map.has(chain)) {
-        map.set(chain, {
-          chain,
-          total: 0,
-          reported: 0,
-          pending: [],
+      if (!promoterMap.has(email)) {
+        promoterMap.set(email, {
+          email,
+          name,
+          records: [],
+          lastRecord: record,
         });
       }
 
-      const item = map.get(chain)!;
+      const group = promoterMap.get(email)!;
+      group.records.push(record);
 
-      item.total += 1;
-
-      const hasReported = reportedEmployees.has(
-        assignment.employee_id
-      );
-
-      if (hasReported) {
-        item.reported += 1;
-      } else {
-        item.pending.push({
-          name:
-            assignment.profiles?.name ||
-            "Sin nombre",
-
-          store:
-            assignment.stores?.name ||
-            "Sin tienda",
-
-          chain,
-        });
+      if (new Date(record.created_at) > new Date(group.lastRecord.created_at)) {
+        group.lastRecord = record;
       }
     });
 
-    return Array.from(map.values()).sort((a, b) => {
-      const pendingA = a.total - a.reported;
-      const pendingB = b.total - b.reported;
+    return Array.from(promoterMap.values()).map((promoter) => ({
+      ...promoter,
+      records: promoter.records.sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      ),
+    }));
+  }, [filteredRecords]);
 
-      return pendingB - pendingA;
+  const presentToday = promoterGroups.length;
+  const entries = records.filter((record) => record.type === "ENTRY").length;
+  const completed = records.filter((record) => record.type === "EXIT").length;
+
+  // CORRECCIÓN 2: Se excluyen los que ya tienen salida ("EXIT") del estado "En comida" (Global)
+  const inBreak = promoterGroups.filter((promoter) => {
+    const types = promoter.records.map((record) => record.type);
+    return types.includes("BREAK_OUT") && !types.includes("BREAK_IN") && !types.includes("EXIT");
+  }).length;
+
+  const chainGroups = useMemo(() => {
+    const chainMap = new Map<string, Map<string, Map<string, PromoterGroup[]>>>();
+
+    promoterGroups.forEach((promoter) => {
+      const last = promoter.lastRecord;
+      const chain = last.stores?.chain_name || "SIN CADENA";
+      const brand = last.stores?.brand_name || "SIN MARCA";
+      const store = last.stores?.name || "SIN TIENDA";
+
+      if (!chainMap.has(chain)) {
+        chainMap.set(chain, new Map());
+      }
+
+      const brandMap = chainMap.get(chain)!;
+
+      if (!brandMap.has(brand)) {
+        brandMap.set(brand, new Map());
+      }
+
+      const storeMap = brandMap.get(brand)!;
+
+      if (!storeMap.has(store)) {
+        storeMap.set(store, []);
+      }
+
+      storeMap.get(store)!.push(promoter);
     });
-  }, [assignments, reportedEmployees]);
 
-  const totalEmployees = assignments.length;
+    return Array.from(chainMap.entries())
+      .map(([chain, brandMap]) => {
+        const brands: BrandGroup[] = Array.from(brandMap.entries())
+          .map(([brand, storeMap]) => ({
+            brand,
+            stores: Array.from(storeMap.entries())
+              .map(([store, promoters]) => ({
+                store,
+                promoters: promoters.sort((a, b) => a.name.localeCompare(b.name)),
+              }))
+              .sort((a, b) => a.store.localeCompare(b.store)),
+          }))
+          .sort((a, b) => a.brand.localeCompare(b.brand));
 
-  const totalReported = attendance.length;
+        const promoters = brands.flatMap((brand) =>
+          brand.stores.flatMap((store) => store.promoters)
+        );
 
-  const totalPending =
-    totalEmployees - totalReported;
+        const chainEntries = promoters.filter((promoter) =>
+          promoter.records.some((record) => record.type === "ENTRY")
+        ).length;
 
-  const coverage =
-    totalEmployees > 0
-      ? Math.round(
-          (totalReported / totalEmployees) * 100
-        )
-      : 0;
+        const chainCompleted = promoters.filter((promoter) =>
+          promoter.records.some((record) => record.type === "EXIT")
+        ).length;
+
+        // CORRECCIÓN 3: Se excluyen los que ya tienen salida ("EXIT") del estado "En comida" (Por cadena)
+        const chainInBreak = promoters.filter((promoter) => {
+          const types = promoter.records.map((record) => record.type);
+          return types.includes("BREAK_OUT") && !types.includes("BREAK_IN") && !types.includes("EXIT");
+        }).length;
+
+        return {
+          chain,
+          brands,
+          promotersCount: promoters.length,
+          entries: chainEntries,
+          inBreak: chainInBreak,
+          completed: chainCompleted,
+        };
+      })
+      .sort((a, b) => a.chain.localeCompare(b.chain));
+  }, [promoterGroups]);
+
+  const toggle = (
+    setter: React.Dispatch<React.SetStateAction<Record<string, boolean>>>,
+    key: string
+  ) => {
+    setter((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const openLocation = (record: AttendanceRecord) => {
+    if (record.latitude === null || record.longitude === null) {
+      alert("Este registro no tiene ubicación.");
+      return;
+    }
+
+    // CORRECCIÓN 4: Sintaxis arreglada y uso de la URL oficial de búsqueda de Google Maps
+    window.open(
+      `https://www.google.com/maps/search/?api=1&query=${record.latitude},${record.longitude}`,
+      "_blank"
+    );
+  };
 
   return (
     <main className="min-h-screen bg-neutral-100 flex">
-      <Sidebar userName="RH EDVA" />
+      <Sidebar userName="Eduardo Palmerin" />
 
       <section className="flex-1 p-8">
-
-        <div className="flex justify-between items-start gap-4 mb-8">
+        <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-5 mb-8">
           <div>
             <h1 className="text-4xl font-bold text-neutral-800">
-              Panel RH
+              Consulta de asistencia
             </h1>
-
             <p className="text-neutral-500 mt-2">
-              Monitoreo operativo y control diario.
+              Agrupado por fecha, cadena, marca, tienda y promotor.
             </p>
           </div>
 
-          <button
-            onClick={loadData}
-            className="bg-neutral-900 hover:bg-neutral-800 text-white px-5 py-3 rounded-xl font-semibold"
-          >
-            Actualizar
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <p className="text-neutral-500 text-sm">
-              Plantilla activa
-            </p>
-
-            <p className="text-4xl font-black text-red-500 mt-3">
-              {totalEmployees}
-            </p>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <p className="text-neutral-500 text-sm">
-              Reportaron entrada
-            </p>
-
-            <p className="text-4xl font-black text-green-500 mt-3">
-              {totalReported}
-            </p>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <p className="text-neutral-500 text-sm">
-              Pendientes
-            </p>
-
-            <p className="text-4xl font-black text-red-500 mt-3">
-              {totalPending}
-            </p>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <p className="text-neutral-500 text-sm">
-              Cobertura
-            </p>
-
-            <p className="text-4xl font-black text-blue-500 mt-3">
-              {coverage}%
-            </p>
-          </div>
-
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-md p-6">
-
-          <div className="flex justify-between items-center mb-6">
+          <div className="bg-white rounded-2xl shadow-md p-4 flex flex-col md:flex-row gap-3 md:items-end">
             <div>
-              <h2 className="text-2xl font-bold text-neutral-800">
-                Pendientes por cadena
-              </h2>
-
-              <p className="text-sm text-neutral-500 mt-1">
-                Promotores que aún no reportan entrada hoy.
-              </p>
+              <label className="text-sm font-semibold text-neutral-700">
+                Fecha
+              </label>
+              <input
+                type="date"
+                className="block mt-1 px-4 py-3 border rounded-xl"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
             </div>
+
+            <button
+              onClick={loadAttendance}
+              className="bg-neutral-900 hover:bg-neutral-800 text-white px-5 py-3 rounded-xl font-semibold"
+            >
+              Actualizar
+            </button>
           </div>
-
-          {loading && (
-            <p className="text-sm text-neutral-500">
-              Cargando información...
-            </p>
-          )}
-
-          <div className="space-y-6">
-
-            {chainSummaries.map((chain) => {
-              const pendingCount =
-                chain.total - chain.reported;
-
-              const chainCoverage =
-                chain.total > 0
-                  ? Math.round(
-                      (chain.reported / chain.total) * 100
-                    )
-                  : 0;
-
-              return (
-                <div
-                  key={chain.chain}
-                  className="border rounded-2xl overflow-hidden"
-                >
-
-                  <div className="bg-neutral-900 text-white px-5 py-4">
-
-                    <div className="flex justify-between items-center gap-4">
-
-                      <div>
-                        <h3 className="font-bold text-lg">
-                          {chain.chain}
-                        </h3>
-
-                        <p className="text-sm text-neutral-300 mt-1">
-                          {chain.reported} presentes ·{" "}
-                          {pendingCount} pendientes ·{" "}
-                          {chain.total} asignados
-                        </p>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-3xl font-black">
-                          {chainCoverage}%
-                        </p>
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                  <div className="p-5 bg-neutral-50">
-
-                    {chain.pending.length === 0 ? (
-                      <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                        <p className="font-semibold text-green-700">
-                          ✅ Todos reportaron entrada.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-
-                        {chain.pending.map((employee, index) => (
-                          <div
-                            key={`${employee.name}-${index}`}
-                            className="bg-white border border-red-200 rounded-xl p-4 flex justify-between items-center gap-4"
-                          >
-
-                            <div>
-                              <p className="font-bold text-neutral-800">
-                                {employee.name}
-                              </p>
-
-                              <p className="text-sm text-neutral-500">
-                                {employee.store}
-                              </p>
-                            </div>
-
-                            <div>
-                              <span className="bg-red-100 text-red-700 text-xs px-3 py-1 rounded-full font-bold">
-                                Pendiente
-                              </span>
-                            </div>
-
-                          </div>
-                        ))}
-
-                      </div>
-                    )}
-
-                  </div>
-
-                </div>
-              );
-            })}
-
-          </div>
-
         </div>
 
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-2xl p-5 shadow-md">
+            <p className="text-neutral-500 text-sm">Presentes</p>
+            <p className="text-4xl font-bold text-red-500 mt-2">
+              {presentToday}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-md">
+            <p className="text-neutral-500 text-sm">Entradas</p>
+            <p className="text-4xl font-bold text-red-500 mt-2">{entries}</p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-md">
+            <p className="text-neutral-500 text-sm">En comida</p>
+            <p className="text-4xl font-bold text-red-500 mt-2">
+              {Math.max(inBreak, 0)}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 shadow-md">
+            <p className="text-neutral-500 text-sm">Jornada completa</p>
+            <p className="text-4xl font-bold text-red-500 mt-2">{completed}</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-md p-5 mb-6">
+          <div className="flex flex-wrap gap-3">
+            {[
+              { value: "ALL", label: "Todos" },
+              { value: "ENTRY", label: "Entradas" },
+              { value: "BREAK_OUT", label: "Salida comida" },
+              { value: "BREAK_IN", label: "Regreso comida" },
+              { value: "EXIT", label: "Salidas" },
+            ].map((filter) => (
+              <button
+                key={filter.value}
+                onClick={() => setTypeFilter(filter.value)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
+                  typeFilter === filter.value
+                    ? "bg-red-500 text-white"
+                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {loading && (
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <p className="text-neutral-500 text-sm">Cargando asistencia...</p>
+          </div>
+        )}
+
+        {message && (
+          <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
+            <p className="text-neutral-700 text-sm">{message}</p>
+          </div>
+        )}
+
+        {!loading && filteredRecords.length === 0 && (
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <p className="text-neutral-500 text-sm">
+              No hay registros para esta fecha o filtro.
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-5">
+          {chainGroups.map((chainGroup) => {
+            const chainKey = chainGroup.chain;
+            const isChainOpen = openChains[chainKey] ?? true;
+
+            return (
+              <div
+                key={chainKey}
+                className="bg-white rounded-2xl shadow-md overflow-hidden"
+              >
+                <button
+                  onClick={() => toggle(setOpenChains, chainKey)}
+                  className="w-full bg-neutral-900 text-white px-6 py-5 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 text-left"
+                >
+                  <div>
+                    <h2 className="text-2xl font-bold">{chainGroup.chain}</h2>
+                    <p className="text-sm text-neutral-300">
+                      {chainGroup.promotersCount} promotor(es)
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 text-sm">
+                    <span>Entradas: {chainGroup.entries}</span>
+                    <span>Comida: {chainGroup.inBreak}</span>
+                    <span>Completas: {chainGroup.completed}</span>
+                  </div>
+                </button>
+
+                {isChainOpen && (
+                  <div className="p-5 space-y-4">
+                    {chainGroup.brands.map((brandGroup) => {
+                      const brandKey = `${chainGroup.chain}-${brandGroup.brand}`;
+                      const isBrandOpen = openBrands[brandKey] ?? true;
+
+                      const brandPromoters = brandGroup.stores.flatMap(
+                        (store) => store.promoters
+                      );
+
+                      return (
+                        <div
+                          key={brandKey}
+                          className="border rounded-2xl overflow-hidden bg-neutral-50"
+                        >
+                          <button
+                            onClick={() => toggle(setOpenBrands, brandKey)}
+                            className="w-full px-5 py-4 flex justify-between items-center text-left bg-neutral-100"
+                          >
+                            <div>
+                              <h3 className="font-bold text-neutral-800">
+                                {brandGroup.brand}
+                              </h3>
+                              <p className="text-sm text-neutral-500">
+                                {brandPromoters.length} promotor(es)
+                              </p>
+                            </div>
+
+                            <span className="font-bold">
+                              {isBrandOpen ? "−" : "+"}
+                            </span>
+                          </button>
+
+                          {isBrandOpen && (
+                            <div className="p-4 space-y-4">
+                              {brandGroup.stores.map((storeGroup) => {
+                                const storeKey = `${brandKey}-${storeGroup.store}`;
+                                const isStoreOpen = openStores[storeKey] ?? false;
+
+                                return (
+                                  <div
+                                    key={storeKey}
+                                    className="bg-white border rounded-2xl overflow-hidden"
+                                  >
+                                    <button
+                                      onClick={() =>
+                                        toggle(setOpenStores, storeKey)
+                                      }
+                                      className="w-full px-5 py-4 flex justify-between items-center text-left"
+                                    >
+                                      <div>
+                                        <h4 className="font-bold text-neutral-800">
+                                          {storeGroup.store}
+                                        </h4>
+                                        <p className="text-sm text-neutral-500">
+                                          {storeGroup.promoters.length}{" "}
+                                          promotor(es)
+                                        </p>
+                                      </div>
+
+                                      <span className="font-bold">
+                                        {isStoreOpen ? "−" : "+"}
+                                      </span>
+                                    </button>
+
+                                    {isStoreOpen && (
+                                      <div className="p-4 space-y-4 bg-neutral-50">
+                                        {storeGroup.promoters.map((promoter) => {
+                                          const promoterKey = `${storeKey}-${promoter.email}`;
+                                          const isPromoterOpen =
+                                            openPromoters[promoterKey] ?? false;
+                                          const last = promoter.lastRecord;
+
+                                          return (
+                                            <div
+                                              key={promoterKey}
+                                              className="bg-white border rounded-2xl p-4"
+                                            >
+                                              <button
+                                                onClick={() =>
+                                                  toggle(
+                                                    setOpenPromoters,
+                                                    promoterKey
+                                                  )
+                                                }
+                                                className="w-full flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 text-left"
+                                              >
+                                                <div>
+                                                  <div className="flex flex-wrap items-center gap-3">
+                                                    <h5 className="font-bold text-neutral-800 text-lg">
+                                                      {promoter.name}
+                                                    </h5>
+
+                                                    <span
+                                                      className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                                        statusStyles[last.type] ||
+                                                        "bg-neutral-100 text-neutral-700"
+                                                      }`}
+                                                    >
+                                                      {statusText[last.type] ||
+                                                        labels[last.type]}
+                                                    </span>
+                                                  </div>
+
+                                                  <p className="text-sm text-neutral-500 mt-1">
+                                                    {promoter.email}
+                                                  </p>
+                                                </div>
+
+                                                <div className="xl:text-right">
+                                                  <p className="text-xs text-neutral-400">
+                                                    Último registro
+                                                  </p>
+                                                  <p className="text-lg font-bold text-neutral-800">
+                                                    {formatMexicoTime(
+                                                      last.created_at
+                                                    )}
+                                                  </p>
+                                                  <p className="text-sm text-neutral-500">
+                                                    {labels[last.type] ||
+                                                      last.type}
+                                                  </p>
+                                                </div>
+                                              </button>
+
+                                              {isPromoterOpen && (
+                                                <div className="mt-4 space-y-2">
+                                                  {promoter.records.map(
+                                                    (record) => (
+                                                      <div
+                                                        key={record.id}
+                                                        className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-neutral-50 border rounded-xl px-4 py-3"
+                                                      >
+                                                        <div>
+                                                          <p className="font-semibold text-neutral-700">
+                                                            {labels[
+                                                              record.type
+                                                            ] || record.type}
+                                                          </p>
+
+                                                          <p className="text-sm text-neutral-500">
+                                                            {formatMexicoTime(
+                                                              record.created_at
+                                                            )}
+                                                          </p>
+                                                        </div>
+
+                                                        <div className="flex flex-wrap gap-2">
+                                                          {record.photo_url && (
+                                                            <a
+                                                              href={
+                                                                record.photo_url
+                                                              }
+                                                              target="_blank"
+                                                              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-xl text-sm font-semibold"
+                                                            >
+                                                              Ver foto
+                                                            </a>
+                                                          )}
+
+                                                          <button
+                                                            onClick={() =>
+                                                              openLocation(
+                                                                record
+                                                              )
+                                                            }
+                                                            className="bg-neutral-900 hover:bg-neutral-800 text-white px-4 py-2 rounded-xl text-sm font-semibold"
+                                                          >
+                                                            Ver ubicación
+                                                          </button>
+                                                        </div>
+                                                      </div>
+                                                    )
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </section>
     </main>
   );
