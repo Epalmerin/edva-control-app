@@ -32,6 +32,26 @@ type ChainSummary = {
   }[];
 };
 
+function getMexicoTodayRange() {
+  const now = new Date();
+
+  const mexicoDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+  const start = new Date(`${mexicoDate}T00:00:00-06:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+  };
+}
+
 export default function AdminPage() {
   const [employees, setEmployees] = useState(0);
   const [attendanceToday, setAttendanceToday] = useState(0);
@@ -46,8 +66,7 @@ export default function AdminPage() {
   const loadDashboard = async () => {
     setLoading(true);
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const { start, end } = getMexicoTodayRange();
 
     const [
       employeesResult,
@@ -62,17 +81,20 @@ export default function AdminPage() {
       supabase
         .from("attendance_records")
         .select("*", { count: "exact", head: true })
-        .gte("created_at", todayStart.toISOString()),
+        .gte("created_at", start)
+        .lt("created_at", end),
 
       supabase
         .from("sales_records")
         .select("*", { count: "exact", head: true })
-        .gte("created_at", todayStart.toISOString()),
+        .gte("created_at", start)
+        .lt("created_at", end),
 
       supabase
-        .from("incidences")
+        .from("incidence_requests")
         .select("*", { count: "exact", head: true })
-        .gte("created_at", todayStart.toISOString()),
+        .gte("created_at", start)
+        .lt("created_at", end),
 
       supabase
         .from("employee_store_assignments")
@@ -94,7 +116,8 @@ export default function AdminPage() {
         .from("attendance_records")
         .select("employee_id, type")
         .eq("type", "ENTRY")
-        .gte("created_at", todayStart.toISOString()),
+        .gte("created_at", start)
+        .lt("created_at", end),
     ]);
 
     setEmployees(employeesResult.count || 0);
