@@ -79,16 +79,30 @@ function getTodayInputDate() {
     day: "2-digit",
   }).formatToParts(now);
 
-  const year =
-    parts.find((p) => p.type === "year")?.value || "";
-
-  const month =
-    parts.find((p) => p.type === "month")?.value || "";
-
-  const day =
-    parts.find((p) => p.type === "day")?.value || "";
+  const year = parts.find((p) => p.type === "year")?.value || "";
+  const month = parts.find((p) => p.type === "month")?.value || "";
+  const day = parts.find((p) => p.type === "day")?.value || "";
 
   return `${year}-${month}-${day}`;
+}
+
+function getMexicoDateRange(selectedDate: string) {
+  const start = new Date(`${selectedDate}T00:00:00-06:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+  };
+}
+
+function formatMexicoTime(date: string) {
+  return new Date(date).toLocaleTimeString("es-MX", {
+    timeZone: "America/Mexico_City",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function AdminAttendancePage() {
@@ -107,8 +121,7 @@ export default function AdminAttendancePage() {
     setLoading(true);
     setMessage("");
 
-    const start = `${selectedDate}T00:00:00`;
-    const end = `${selectedDate}T23:59:59`;
+    const { start, end } = getMexicoDateRange(selectedDate);
 
     const { data, error } = await supabase
       .from("attendance_records")
@@ -130,7 +143,7 @@ export default function AdminAttendancePage() {
         )
       `)
       .gte("created_at", start)
-      .lte("created_at", end)
+      .lt("created_at", end)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -545,14 +558,8 @@ export default function AdminAttendancePage() {
                                                     Último registro
                                                   </p>
                                                   <p className="text-lg font-bold text-neutral-800">
-                                                    {new Date(
+                                                    {formatMexicoTime(
                                                       last.created_at
-                                                    ).toLocaleTimeString(
-                                                      "es-MX",
-                                                      {
-                                                        hour: "2-digit",
-                                                        minute: "2-digit",
-                                                      }
                                                     )}
                                                   </p>
                                                   <p className="text-sm text-neutral-500">
@@ -578,15 +585,8 @@ export default function AdminAttendancePage() {
                                                           </p>
 
                                                           <p className="text-sm text-neutral-500">
-                                                            {new Date(
+                                                            {formatMexicoTime(
                                                               record.created_at
-                                                            ).toLocaleTimeString(
-                                                              "es-MX",
-                                                              {
-                                                                hour: "2-digit",
-                                                                minute:
-                                                                  "2-digit",
-                                                              }
                                                             )}
                                                           </p>
                                                         </div>
