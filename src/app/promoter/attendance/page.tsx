@@ -37,6 +37,102 @@ function calculateDistanceMeters(
   return earthRadius * c;
 }
 
+function getMexicoTodayRange() {
+  const now = new Date();
+
+  const mexicoDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+  const start = new Date(`${mexicoDate}T00:00:00-06:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+  };
+}
+
+function compressImage(file: File): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      image.src = reader.result as string;
+    };
+
+    reader.onerror = () => {
+      reject(new Error("No se pudo leer la imagen."));
+    };
+
+    image.onload = () => {
+      const maxWidth = 1280;
+      const maxHeight = 1280;
+
+      let width = image.width;
+      let height = image.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) {
+        reject(new Error("No se pudo procesar la imagen."));
+        return;
+      }
+
+      ctx.drawImage(image, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("No se pudo comprimir la imagen."));
+            return;
+          }
+
+          const compressedFile = new File(
+            [blob],
+            `attendance-${Date.now()}.jpg`,
+            {
+              type: "image/jpeg",
+              lastModified: Date.now(),
+            }
+          );
+
+          resolve(compressedFile);
+        },
+        "image/jpeg",
+        0.7
+      );
+    };
+
+    image.onerror = () => {
+      reject(new Error("La imagen no se pudo cargar."));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function AttendancePage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -192,7 +288,12 @@ Ahora selecciona el tipo de asistencia y toma la foto del punto de venta.`
       return;
     }
 
-    if (!insideRange || !nearestStore || currentLatitude === null || currentLongitude === null) {
+    if (
+      !insideRange ||
+      !nearestStore ||
+      currentLatitude === null ||
+      currentLongitude === null
+    ) {
       setMessage("Primero valida tu ubicación dentro del rango permitido.");
       setLoading(false);
       return;
@@ -210,14 +311,14 @@ Ahora selecciona el tipo de asistencia y toma la foto del punto de venta.`
       return;
     }
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const { start, end } = getMexicoTodayRange();
 
     const { data: todayRecords, error: recordsError } = await supabase
       .from("attendance_records")
       .select("type, created_at")
       .eq("employee_id", userId)
-      .gte("created_at", todayStart.toISOString())
+      .gte("created_at", start)
+      .lt("created_at", end)
       .order("created_at", { ascending: true });
 
     if (recordsError) {
@@ -265,13 +366,28 @@ Siguiente registro permitido: ${labels[expectedType]}`
       return;
     }
 
-    const fileExt = photo.name.split(".").pop();
-    const fileName = `${userId}-${Date.now()}.${fileExt}`;
+    let compressedPhoto: File;
+
+    try {
+      setMessage("Procesando foto...");
+      compressedPhoto = await compressImage(photo);
+    } catch (error: any) {
+      setMessage(
+        error?.message ||
+          "No se pudo procesar la foto. Intenta tomar otra imagen."
+      );
+      setLoading(false);
+      return;
+    }
+
+    const fileName = `${userId}-${Date.now()}.jpg`;
     const filePath = `${userId}/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from("attendance-photos")
-      .upload(filePath, photo);
+      .upload(filePath, compressedPhoto, {
+        contentType: "image/jpeg",
+      });
 
     if (uploadError) {
       setMessage(`Error al subir foto: ${uploadError.message}`);
