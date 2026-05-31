@@ -60,19 +60,13 @@ function getMexicoTodayRange() {
 function compressImage(file: File): Promise<File> {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      image.src = reader.result as string;
-    };
-
-    reader.onerror = () => {
-      reject(new Error("No se pudo leer la imagen."));
-    };
+    const objectUrl = URL.createObjectURL(file);
 
     image.onload = () => {
-      const maxWidth = 1280;
-      const maxHeight = 1280;
+      URL.revokeObjectURL(objectUrl);
+
+      const maxWidth = 720;
+      const maxHeight = 720;
 
       let width = image.width;
       let height = image.height;
@@ -121,15 +115,16 @@ function compressImage(file: File): Promise<File> {
           resolve(compressedFile);
         },
         "image/jpeg",
-        0.7
+        0.5
       );
     };
 
     image.onerror = () => {
-      reject(new Error("La imagen no se pudo cargar."));
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("La imagen no se pudo cargar. Intenta tomar otra foto."));
     };
 
-    reader.readAsDataURL(file);
+    image.src = objectUrl;
   });
 }
 
@@ -181,8 +176,7 @@ export default function AttendancePage() {
 
         const { data, error } = await supabase
           .from("employee_store_assignments")
-          .select(
-            `
+          .select(`
             stores:store_id (
               id,
               name,
@@ -192,8 +186,7 @@ export default function AttendancePage() {
               chain_name,
               brand_name
             )
-          `
-          )
+          `)
           .eq("employee_id", userId)
           .eq("active", true);
 
@@ -374,7 +367,7 @@ Siguiente registro permitido: ${labels[expectedType]}`
     } catch (error: any) {
       setMessage(
         error?.message ||
-          "No se pudo procesar la foto. Intenta tomar otra imagen."
+          "No se pudo procesar la foto. Intenta tomar otra imagen o selecciona una desde galería."
       );
       setLoading(false);
       return;
@@ -476,6 +469,7 @@ Siguiente registro permitido: ${labels[expectedType]}`
                 <label className="text-sm font-medium text-neutral-700">
                   Tipo de asistencia
                 </label>
+
                 <select
                   className="w-full mt-1 px-4 py-3 border rounded-xl"
                   value={attendanceType}
@@ -494,14 +488,18 @@ Siguiente registro permitido: ${labels[expectedType]}`
                 <label className="text-sm font-medium text-neutral-700">
                   Foto del punto de venta
                 </label>
+
                 <input
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   className="w-full mt-1 px-4 py-3 border rounded-xl"
                   onChange={(e) => setPhoto(e.target.files?.[0] || null)}
                   required
                 />
+
+                <p className="text-xs text-neutral-400 mt-2">
+                  Puedes tomar una foto o seleccionar una desde galería.
+                </p>
               </div>
 
               <button
