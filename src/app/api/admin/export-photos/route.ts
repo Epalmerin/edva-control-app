@@ -68,12 +68,14 @@ export async function GET() {
     zip.file(`${promotorName}/${fileName}`, buffer);
   }
 
-  const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
+  const zipArrayBuffer = await zip.generateAsync({
+  type: "arraybuffer",
+});
 
-  return new NextResponse(zipBuffer, {
-    headers: {
-      "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="fotos-asistencia-por-promotor.zip"`,
-    },
-  });
+return new Response(zipArrayBuffer, {
+  headers: {
+    "Content-Type": "application/zip",
+    "Content-Disposition": `attachment; filename="fotos-asistencia-por-promotor.zip"`,
+  },
+});
 }
