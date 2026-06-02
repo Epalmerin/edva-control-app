@@ -5,12 +5,26 @@ import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
 
+type LoadingState = false | "excel" | "photos";
+
 export default function ReportsPage() {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<LoadingState>(false);
   const [message, setMessage] = useState("");
 
+  const downloadPhotos = () => {
+    setLoading("photos");
+    setMessage("Preparando ZIP de fotografías...");
+
+    window.location.href = "/api/admin/export-photos";
+
+    setTimeout(() => {
+      setLoading(false);
+      setMessage("Descarga de fotografías iniciada.");
+    }, 2000);
+  };
+
   const generateReport = async (period: "FIRST" | "SECOND") => {
-    setLoading(true);
+    setLoading("excel");
     setMessage("");
 
     const now = new Date();
@@ -20,7 +34,6 @@ export default function ReportsPage() {
 
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
-
     const formattedMonth = String(month).padStart(2, "0");
 
     if (period === "FIRST") {
@@ -28,9 +41,7 @@ export default function ReportsPage() {
       endDate = `${year}-${formattedMonth}-15`;
     } else {
       startDate = `${year}-${formattedMonth}-16`;
-
       const lastDay = new Date(year, month, 0).getDate();
-
       endDate = `${year}-${formattedMonth}-${lastDay}`;
     }
 
@@ -111,6 +122,9 @@ export default function ReportsPage() {
       Promotor: Array.isArray(item.profiles)
         ? item.profiles[0]?.name
         : item.profiles?.name,
+      Email: Array.isArray(item.profiles)
+        ? item.profiles[0]?.email
+        : item.profiles?.email,
       Tienda: Array.isArray(item.stores)
         ? item.stores[0]?.name
         : item.stores?.name,
@@ -155,30 +169,21 @@ export default function ReportsPage() {
 
     const workbook = XLSX.utils.book_new();
 
-    const attendanceWorksheet =
-      XLSX.utils.json_to_sheet(attendanceSheet);
-
-    const salesWorksheet =
-      XLSX.utils.json_to_sheet(salesSheet);
-
-    const incidencesWorksheet =
-      XLSX.utils.json_to_sheet(incidencesSheet);
-
     XLSX.utils.book_append_sheet(
       workbook,
-      attendanceWorksheet,
+      XLSX.utils.json_to_sheet(attendanceSheet),
       "Asistencia"
     );
 
     XLSX.utils.book_append_sheet(
       workbook,
-      salesWorksheet,
+      XLSX.utils.json_to_sheet(salesSheet),
       "Ventas"
     );
 
     XLSX.utils.book_append_sheet(
       workbook,
-      incidencesWorksheet,
+      XLSX.utils.json_to_sheet(incidencesSheet),
       "Incidencias"
     );
 
@@ -200,7 +205,7 @@ export default function ReportsPage() {
         </h1>
 
         <p className="text-neutral-500 mt-2 mb-8">
-          Exportación Excel de asistencia, ventas e incidencias.
+          Exportación Excel de asistencia, ventas, incidencias y fotografías.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
@@ -209,16 +214,14 @@ export default function ReportsPage() {
               Primera Quincena
             </h2>
 
-            <p className="text-neutral-500 mt-2 mb-6">
-              Del día 1 al 15
-            </p>
+            <p className="text-neutral-500 mt-2 mb-6">Del día 1 al 15</p>
 
             <button
               onClick={() => generateReport("FIRST")}
-              disabled={loading}
+              disabled={loading === "excel"}
               className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl font-semibold disabled:opacity-60"
             >
-              {loading ? "Generando..." : "Generar Excel"}
+              {loading === "excel" ? "Generando..." : "Generar Excel"}
             </button>
           </div>
 
@@ -227,25 +230,39 @@ export default function ReportsPage() {
               Segunda Quincena
             </h2>
 
-            <p className="text-neutral-500 mt-2 mb-6">
-              Del día 16 al 30/31
-            </p>
+            <p className="text-neutral-500 mt-2 mb-6">Del día 16 al 30/31</p>
 
             <button
               onClick={() => generateReport("SECOND")}
-              disabled={loading}
+              disabled={loading === "excel"}
               className="bg-neutral-900 hover:bg-neutral-800 text-white px-6 py-3 rounded-xl font-semibold disabled:opacity-60"
             >
-              {loading ? "Generando..." : "Generar Excel"}
+              {loading === "excel" ? "Generando..." : "Generar Excel"}
             </button>
           </div>
         </div>
 
+        <div className="mt-8 bg-white rounded-2xl shadow-md p-8 max-w-4xl">
+          <h2 className="text-2xl font-semibold text-neutral-800">
+            Fotografías de asistencia
+          </h2>
+
+          <p className="text-neutral-500 mt-2 mb-6">
+            Descarga un ZIP con todas las fotos registradas en asistencia.
+          </p>
+
+          <button
+            onClick={downloadPhotos}
+            disabled={loading === "photos"}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold disabled:opacity-60"
+          >
+            {loading === "photos" ? "Preparando ZIP..." : "Exportar fotos"}
+          </button>
+        </div>
+
         {message && (
           <div className="mt-8 bg-white rounded-2xl shadow-md p-5 max-w-4xl">
-            <p className="text-neutral-700 font-medium">
-              {message}
-            </p>
+            <p className="text-neutral-700 font-medium">{message}</p>
           </div>
         )}
       </section>
