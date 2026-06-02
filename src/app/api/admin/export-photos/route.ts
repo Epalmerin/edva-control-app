@@ -50,7 +50,7 @@ export async function GET() {
 
     if (downloadError || !file) continue;
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const arrayBuffer = await file.arrayBuffer();
 
     const profile = Array.isArray(row.profiles)
       ? row.profiles[0]
@@ -65,17 +65,18 @@ export async function GET() {
 
     const fileName = `${date}_${type}_${row.id}.jpg`;
 
-    zip.file(`${promotorName}/${fileName}`, buffer);
+    zip.file(`${promotorName}/${fileName}`, arrayBuffer);
   }
 
   const zipArrayBuffer = await zip.generateAsync({
-  type: "arraybuffer",
-});
+    type: "arraybuffer",
+  });
 
-return new Response(zipArrayBuffer, {
-  headers: {
-    "Content-Type": "application/zip",
-    "Content-Disposition": `attachment; filename="fotos-asistencia-por-promotor.zip"`,
-  },
-});
+  return new Response(zipArrayBuffer, {
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition":
+        'attachment; filename="fotos-asistencia-por-promotor.zip"',
+    },
+  });
 }
