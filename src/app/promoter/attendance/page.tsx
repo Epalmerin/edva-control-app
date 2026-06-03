@@ -57,6 +57,10 @@ function getMexicoTodayRange() {
   };
 }
 
+function requiresPhoto(type: string) {
+  return type === "ENTRY" || type === "EXIT";
+}
+
 function compressImage(file: File): Promise<File> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -141,6 +145,8 @@ export default function AttendancePage() {
 
   const [currentLatitude, setCurrentLatitude] = useState<number | null>(null);
   const [currentLongitude, setCurrentLongitude] = useState<number | null>(null);
+
+  const photoIsRequired = requiresPhoto(attendanceType);
 
   const handleValidateLocation = async () => {
     setLoading(true);
@@ -255,7 +261,7 @@ Cadena/Marca: ${closestStore.chain_name || ""} / ${
           }
 Distancia aproximada: ${Math.round(closestDistance)} m
 
-Ahora selecciona el tipo de asistencia y toma la foto del punto de venta.`
+Ahora selecciona el tipo de asistencia. La foto solo será obligatoria en entrada y salida.`
         );
 
         setLoading(false);
@@ -298,8 +304,8 @@ Ahora selecciona el tipo de asistencia y toma la foto del punto de venta.`
       return;
     }
 
-    if (!photo) {
-      setMessage("Debes tomar o subir una foto del punto de venta.");
+    if (requiresPhoto(attendanceType) && !photo) {
+      setMessage("Debes tomar o subir una foto para entrada o salida.");
       setLoading(false);
       return;
     }
@@ -359,40 +365,44 @@ Siguiente registro permitido: ${labels[expectedType]}`
       return;
     }
 
-    let compressedPhoto: File;
+    let photoUrl: string | null = null;
 
-    try {
-      setMessage("Procesando foto...");
-      compressedPhoto = await compressImage(photo);
-    } catch (error: any) {
-      setMessage(
-        error?.message ||
-          "No se pudo procesar la foto. Intenta tomar otra imagen o selecciona una desde galería."
-      );
-      setLoading(false);
-      return;
+    if (requiresPhoto(attendanceType) && photo) {
+      let compressedPhoto: File;
+
+      try {
+        setMessage("Procesando foto...");
+        compressedPhoto = await compressImage(photo);
+      } catch (error: any) {
+        setMessage(
+          error?.message ||
+            "No se pudo procesar la foto. Intenta tomar otra imagen o selecciona una desde galería."
+        );
+        setLoading(false);
+        return;
+      }
+
+      const fileName = `${userId}-${Date.now()}.jpg`;
+      const filePath = `${userId}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("attendance-photos")
+        .upload(filePath, compressedPhoto, {
+          contentType: "image/jpeg",
+        });
+
+      if (uploadError) {
+        setMessage(`Error al subir foto: ${uploadError.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("attendance-photos")
+        .getPublicUrl(filePath);
+
+      photoUrl = publicUrlData.publicUrl;
     }
-
-    const fileName = `${userId}-${Date.now()}.jpg`;
-    const filePath = `${userId}/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("attendance-photos")
-      .upload(filePath, compressedPhoto, {
-        contentType: "image/jpeg",
-      });
-
-    if (uploadError) {
-      setMessage(`Error al subir foto: ${uploadError.message}`);
-      setLoading(false);
-      return;
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from("attendance-photos")
-      .getPublicUrl(filePath);
-
-    const photoUrl = publicUrlData.publicUrl;
 
     const { error: insertError } = await supabase
       .from("attendance_records")
@@ -473,7 +483,10 @@ Siguiente registro permitido: ${labels[expectedType]}`
                 <select
                   className="w-full mt-1 px-4 py-3 border rounded-xl"
                   value={attendanceType}
-                  onChange={(e) => setAttendanceType(e.target.value)}
+                  onChange={(e) => {
+                    setAttendanceType(e.target.value);
+                    setPhoto(null);
+                  }}
                   required
                 >
                   <option value="">Selecciona opción</option>
@@ -482,25 +495,35 @@ Siguiente registro permitido: ${labels[expectedType]}`
                   <option value="BREAK_IN">Regreso comida</option>
                   <option value="EXIT">Salida</option>
                 </select>
+
+                {attendanceType && (
+                  <p className="text-xs text-neutral-500 mt-2">
+                    {photoIsRequired
+                      ? "Este registro requiere foto y ubicación."
+                      : "Este registro solo requiere ubicación. No es necesario tomar foto."}
+                  </p>
+                )}
               </div>
 
-              <div>
-                <label className="text-sm font-medium text-neutral-700">
-                  Foto del punto de venta
-                </label>
+              {photoIsRequired && (
+                <div>
+                  <label className="text-sm font-medium text-neutral-700">
+                    Foto del punto de venta
+                  </label>
 
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="w-full mt-1 px-4 py-3 border rounded-xl"
-                  onChange={(e) => setPhoto(e.target.files?.[0] || null)}
-                  required
-                />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="w-full mt-1 px-4 py-3 border rounded-xl"
+                    onChange={(e) => setPhoto(e.target.files?.[0] || null)}
+                    required={photoIsRequired}
+                  />
 
-                <p className="text-xs text-neutral-400 mt-2">
-                  Puedes tomar una foto o seleccionar una desde galería.
-                </p>
-              </div>
+                  <p className="text-xs text-neutral-400 mt-2">
+                    Puedes tomar una foto o seleccionar una desde galería.
+                  </p>
+                </div>
+              )}
 
               <button
                 type="submit"
