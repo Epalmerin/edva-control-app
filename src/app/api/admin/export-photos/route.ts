@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
 import { createClient } from "@supabase/supabase-js";
 
@@ -9,19 +9,26 @@ function cleanFileName(value: string) {
     .trim();
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const zip = new JSZip();
+  const { searchParams } = new URL(request.url);
 
-  const sevenDaysAgo = new Date(
-    Date.now() - 7 * 24 * 60 * 60 * 1000
-  ).toISOString();
+  const startDate = searchParams.get("startDate");
+  const endDate = searchParams.get("endDate");
+  const employeeId = searchParams.get("employeeId");
 
-  const { data: records, error } = await supabase
+  if (!startDate || !endDate) {
+    return NextResponse.json(
+      { error: "Debes enviar fecha inicio y fecha fin." },
+      { status: 400 }
+    );
+  }
+
+  let query = supabase
     .from("attendance_records")
     .select(`
       id,
@@ -33,17 +40,42 @@ export async function GET() {
         name
       )
     `)
-    .gte("created_at", sevenDaysAgo)
+    .gte("created_at", `${startDate}T00:00:00`)
+    .lte("created_at", `${endDate}T23:59:59`)
     .not("photo_url", "is", null)
     .order("created_at", { ascending: true });
+
+  if (employeeId && employeeId !== "all") {
+    query = query.eq("employee_id", employeeId);
+  }
+
+  const { data: records, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  for (const row of records || []) {
-    const url = row.photo_url as string;
+  if (!records || records.length === 0) {
+    return NextResponse.json(
+      { error: "No hay fotos en ese periodo." },
+      { status: 404 }
+    );
+  }
 
+  if (records.length > 250) {
+    return NextResponse.json(
+      {
+        error:
+          "Demasiadas fotos. Reduce el rango de fechas o selecciona un promotor.",
+      },
+      { status: 413 }
+    );
+  }
+
+  const zip = new JSZip();
+
+  for (const row of records) {
+    const url = row.photo_url as string;
     const marker = "/attendance-photos/";
     const photoPath = url.split(marker)[1];
 
@@ -67,7 +99,6 @@ export async function GET() {
 
     const date = row.created_at?.slice(0, 10) || "sin-fecha";
     const type = row.type || "registro";
-
     const fileName = `${date}_${type}_${row.id}.jpg`;
 
     zip.file(`${promotorName}/${fileName}`, arrayBuffer);
@@ -80,8 +111,7 @@ export async function GET() {
   return new Response(zipArrayBuffer, {
     headers: {
       "Content-Type": "application/zip",
-      "Content-Disposition":
-        'attachment; filename="fotos-asistencia-ultimos-7-dias.zip"',
+      "Content-Disposition": `attachment; filename="fotos-asistencia_${startDate}_${endDate}.zip"`,
     },
   });
 }

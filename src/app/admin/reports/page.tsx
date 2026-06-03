@@ -11,16 +11,47 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState<LoadingState>(false);
   const [message, setMessage] = useState("");
 
-  const downloadPhotos = () => {
+  const [photoStartDate, setPhotoStartDate] = useState("");
+  const [photoEndDate, setPhotoEndDate] = useState("");
+
+  const downloadPhotos = async () => {
+    if (!photoStartDate || !photoEndDate) {
+      setMessage("Selecciona fecha inicio y fecha fin para exportar fotos.");
+      return;
+    }
+
     setLoading("photos");
     setMessage("Preparando ZIP de fotografías...");
 
-    window.location.href = "/api/admin/export-photos";
+    try {
+      const response = await fetch(
+        `/api/admin/export-photos?startDate=${photoStartDate}&endDate=${photoEndDate}&employeeId=all`
+      );
 
-    setTimeout(() => {
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "No se pudo generar el ZIP.");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `fotos-asistencia_${photoStartDate}_${photoEndDate}.zip`;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+
+      setMessage("ZIP de fotografías descargado correctamente.");
+    } catch (error: any) {
+      setMessage(error.message || "Error al descargar las fotografías.");
+    } finally {
       setLoading(false);
-      setMessage("Descarga de fotografías iniciada.");
-    }, 2000);
+    }
   };
 
   const generateReport = async (period: "FIRST" | "SECOND") => {
@@ -248,8 +279,34 @@ export default function ReportsPage() {
           </h2>
 
           <p className="text-neutral-500 mt-2 mb-6">
-            Descarga un ZIP con todas las fotos registradas en asistencia.
+            Descarga un ZIP con las fotos registradas por rango de fechas.
           </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-semibold text-neutral-700 mb-2">
+                Fecha inicio
+              </label>
+              <input
+                type="date"
+                value={photoStartDate}
+                onChange={(e) => setPhotoStartDate(e.target.value)}
+                className="w-full border border-neutral-300 rounded-xl px-4 py-3"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-neutral-700 mb-2">
+                Fecha fin
+              </label>
+              <input
+                type="date"
+                value={photoEndDate}
+                onChange={(e) => setPhotoEndDate(e.target.value)}
+                className="w-full border border-neutral-300 rounded-xl px-4 py-3"
+              />
+            </div>
+          </div>
 
           <button
             onClick={downloadPhotos}
