@@ -17,6 +17,10 @@ export async function GET() {
 
   const zip = new JSZip();
 
+  const sevenDaysAgo = new Date(
+    Date.now() - 7 * 24 * 60 * 60 * 1000
+  ).toISOString();
+
   const { data: records, error } = await supabase
     .from("attendance_records")
     .select(`
@@ -29,6 +33,7 @@ export async function GET() {
         name
       )
     `)
+    .gte("created_at", sevenDaysAgo)
     .not("photo_url", "is", null)
     .order("created_at", { ascending: true });
 
@@ -76,7 +81,7 @@ export async function GET() {
     headers: {
       "Content-Type": "application/zip",
       "Content-Disposition":
-        'attachment; filename="fotos-asistencia-por-promotor.zip"',
+        'attachment; filename="fotos-asistencia-ultimos-7-dias.zip"',
     },
   });
 }
