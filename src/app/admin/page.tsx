@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 
@@ -26,10 +27,8 @@ type ChainSummary = {
   chain: string;
   total: number;
   reported: number;
-  pending: {
-    name: string;
-    store: string;
-  }[];
+  pending: number;
+  coverage: number;
 };
 
 function getMexicoTodayRange() {
@@ -57,9 +56,12 @@ export default function AdminPage() {
   const [attendanceToday, setAttendanceToday] = useState(0);
   const [salesToday, setSalesToday] = useState(0);
   const [incidencesToday, setIncidencesToday] = useState(0);
+  const [routeRecordsToday, setRouteRecordsToday] = useState(0);
 
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [attendanceEntries, setAttendanceEntries] = useState<AttendanceRecord[]>([]);
+  const [attendanceEntries, setAttendanceEntries] = useState<
+    AttendanceRecord[]
+  >([]);
 
   const [loading, setLoading] = useState(true);
 
@@ -73,6 +75,7 @@ export default function AdminPage() {
       attendanceResult,
       salesResult,
       incidencesResult,
+      routeRecordsResult,
       assignmentsResult,
       entriesResult,
     ] = await Promise.all([
@@ -92,6 +95,12 @@ export default function AdminPage() {
 
       supabase
         .from("incidence_requests")
+        .select("*", { count: "exact", head: true })
+        .gte("created_at", start)
+        .lt("created_at", end),
+
+      supabase
+        .from("store_visit_records")
         .select("*", { count: "exact", head: true })
         .gte("created_at", start)
         .lt("created_at", end),
@@ -124,17 +133,19 @@ export default function AdminPage() {
     setAttendanceToday(attendanceResult.count || 0);
     setSalesToday(salesResult.count || 0);
     setIncidencesToday(incidencesResult.count || 0);
+    setRouteRecordsToday(routeRecordsResult.count || 0);
 
     setAssignments(
       (assignmentsResult.data || []).map((item: any) => ({
         ...item,
-        profiles: Array.isArray(item.profiles) ? item.profiles[0] : item.profiles,
+        profiles: Array.isArray(item.profiles)
+          ? item.profiles[0]
+          : item.profiles,
         stores: Array.isArray(item.stores) ? item.stores[0] : item.stores,
       }))
     );
 
     setAttendanceEntries(entriesResult.data || []);
-
     setLoading(false);
   };
 
@@ -147,7 +158,14 @@ export default function AdminPage() {
   }, [attendanceEntries]);
 
   const chainSummaries = useMemo<ChainSummary[]>(() => {
-    const map = new Map<string, ChainSummary>();
+    const map = new Map<
+      string,
+      {
+        chain: string;
+        employeeIds: Set<string>;
+        reportedIds: Set<string>;
+      }
+    >();
 
     assignments.forEach((assignment) => {
       const chain = assignment.stores?.chain_name || "Sin cadena";
@@ -155,33 +173,41 @@ export default function AdminPage() {
       if (!map.has(chain)) {
         map.set(chain, {
           chain,
-          total: 0,
-          reported: 0,
-          pending: [],
+          employeeIds: new Set<string>(),
+          reportedIds: new Set<string>(),
         });
       }
 
       const item = map.get(chain)!;
-      item.total += 1;
+
+      item.employeeIds.add(assignment.employee_id);
 
       if (reportedEmployees.has(assignment.employee_id)) {
-        item.reported += 1;
-      } else {
-        item.pending.push({
-          name: assignment.profiles?.name || "Sin nombre",
-          store: assignment.stores?.name || "Sin tienda",
-        });
+        item.reportedIds.add(assignment.employee_id);
       }
     });
 
-    return Array.from(map.values()).sort((a, b) => {
-      const pendingA = a.total - a.reported;
-      const pendingB = b.total - b.reported;
-      return pendingB - pendingA;
-    });
+    return Array.from(map.values())
+      .map((item) => {
+        const total = item.employeeIds.size;
+        const reported = item.reportedIds.size;
+        const pending = Math.max(total - reported, 0);
+
+        return {
+          chain: item.chain,
+          total,
+          reported,
+          pending,
+          coverage: total > 0 ? Math.round((reported / total) * 100) : 0,
+        };
+      })
+      .sort((a, b) => b.pending - a.pending);
   }, [assignments, reportedEmployees]);
 
-  const activePromoters = assignments.length;
+  const activePromoters = new Set(
+    assignments.map((assignment) => assignment.employee_id)
+  ).size;
+
   const reportedPromoters = reportedEmployees.size;
   const pendingPromoters = Math.max(activePromoters - reportedPromoters, 0);
 
@@ -189,6 +215,10 @@ export default function AdminPage() {
     activePromoters > 0
       ? Math.round((reportedPromoters / activePromoters) * 100)
       : 0;
+
+  const criticalChains = chainSummaries.filter(
+    (chain) => chain.pending > 0 || chain.coverage < 80
+  );
 
   return (
     <main className="min-h-screen bg-neutral-100 flex">
@@ -202,7 +232,7 @@ export default function AdminPage() {
             </h1>
 
             <p className="text-neutral-500 mt-2">
-              Centro ejecutivo de operación EDVA Control App.
+              Vista ejecutiva de operación diaria.
             </p>
           </div>
 
@@ -216,41 +246,29 @@ export default function AdminPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-2xl p-6 shadow-md">
-            <h2 className="text-lg font-semibold text-neutral-700">
-              Empleados
-            </h2>
-
-            <p className="text-4xl font-bold text-red-500 mt-4">
+            <p className="text-neutral-500 text-sm">Empleados</p>
+            <p className="text-4xl font-black text-red-500 mt-3">
               {loading ? "..." : employees}
             </p>
           </div>
 
           <div className="bg-white rounded-2xl p-6 shadow-md">
-            <h2 className="text-lg font-semibold text-neutral-700">
-              Asistencias hoy
-            </h2>
-
-            <p className="text-4xl font-bold text-red-500 mt-4">
+            <p className="text-neutral-500 text-sm">Asistencias hoy</p>
+            <p className="text-4xl font-black text-red-500 mt-3">
               {loading ? "..." : attendanceToday}
             </p>
           </div>
 
           <div className="bg-white rounded-2xl p-6 shadow-md">
-            <h2 className="text-lg font-semibold text-neutral-700">
-              Ventas hoy
-            </h2>
-
-            <p className="text-4xl font-bold text-red-500 mt-4">
+            <p className="text-neutral-500 text-sm">Ventas hoy</p>
+            <p className="text-4xl font-black text-red-500 mt-3">
               {loading ? "..." : salesToday}
             </p>
           </div>
 
           <div className="bg-white rounded-2xl p-6 shadow-md">
-            <h2 className="text-lg font-semibold text-neutral-700">
-              Incidencias
-            </h2>
-
-            <p className="text-4xl font-bold text-red-500 mt-4">
+            <p className="text-neutral-500 text-sm">Incidencias hoy</p>
+            <p className="text-4xl font-black text-red-500 mt-3">
               {loading ? "..." : incidencesToday}
             </p>
           </div>
@@ -286,100 +304,156 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-md p-6">
-          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-neutral-800">
-                Monitoreo operativo de hoy
-              </h2>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
+          <div className="xl:col-span-2 bg-white rounded-2xl shadow-md p-6">
+            <div className="flex justify-between items-start gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-neutral-800">
+                  Resumen por cadena
+                </h2>
 
-              <p className="text-sm text-neutral-500 mt-1">
-                Promotores pendientes de reportar entrada agrupados por cadena.
-              </p>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Cobertura de entrada del día por promotores únicos.
+                </p>
+              </div>
+
+              <Link
+                href="/admin/attendance"
+                className="bg-neutral-900 hover:bg-neutral-800 text-white px-4 py-2 rounded-xl text-sm font-semibold"
+              >
+                Ver asistencia
+              </Link>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-neutral-500">
+                    <th className="py-3">Cadena</th>
+                    <th className="py-3 text-center">Promotores</th>
+                    <th className="py-3 text-center">Presentes</th>
+                    <th className="py-3 text-center">Pendientes</th>
+                    <th className="py-3 text-center">Cobertura</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {chainSummaries.map((chain) => (
+                    <tr key={chain.chain} className="border-b">
+                      <td className="py-4 font-bold text-neutral-800">
+                        {chain.chain}
+                      </td>
+
+                      <td className="py-4 text-center">{chain.total}</td>
+
+                      <td className="py-4 text-center text-green-600 font-bold">
+                        {chain.reported}
+                      </td>
+
+                      <td className="py-4 text-center text-red-500 font-bold">
+                        {chain.pending}
+                      </td>
+
+                      <td className="py-4 text-center">
+                        <span
+                          className={`px-3 py-1 rounded-full font-bold text-xs ${
+                            chain.coverage >= 80
+                              ? "bg-green-100 text-green-700"
+                              : chain.coverage >= 50
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-red-100 text-red-700"
+                          }`}
+                        >
+                          {chain.coverage}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          {loading && (
-            <p className="text-sm text-neutral-500">
-              Cargando operación...
+          <div className="bg-white rounded-2xl shadow-md p-6">
+            <h2 className="text-2xl font-bold text-neutral-800 mb-2">
+              Alertas operativas
+            </h2>
+
+            <p className="text-sm text-neutral-500 mb-6">
+              Cadenas que requieren atención.
             </p>
-          )}
 
-          <div className="space-y-5">
-            {chainSummaries.map((chain) => {
-              const pendingCount = chain.total - chain.reported;
+            <div className="space-y-3">
+              {criticalChains.length === 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <p className="font-semibold text-green-700">
+                    Operación sin alertas críticas.
+                  </p>
+                </div>
+              )}
 
-              const chainCoverage =
-                chain.total > 0
-                  ? Math.round((chain.reported / chain.total) * 100)
-                  : 0;
-
-              return (
+              {criticalChains.slice(0, 5).map((chain) => (
                 <div
                   key={chain.chain}
-                  className="border rounded-2xl overflow-hidden"
+                  className="border border-red-200 bg-red-50 rounded-xl p-4"
                 >
-                  <div className="bg-neutral-900 text-white px-5 py-4">
-                    <div className="flex justify-between items-center gap-4">
-                      <div>
-                        <h3 className="font-bold text-lg">
-                          {chain.chain}
-                        </h3>
+                  <p className="font-bold text-neutral-800">{chain.chain}</p>
 
-                        <p className="text-sm text-neutral-300">
-                          {chain.reported} presentes · {pendingCount} pendientes ·{" "}
-                          {chain.total} asignados
-                        </p>
-                      </div>
-
-                      <p className="text-3xl font-black">
-                        {chainCoverage}%
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="p-5 bg-neutral-50">
-                    {chain.pending.length === 0 ? (
-                      <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                        <p className="font-semibold text-green-700">
-                          ✅ Todos reportaron entrada.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                        {chain.pending.slice(0, 10).map((employee, index) => (
-                          <div
-                            key={`${employee.name}-${index}`}
-                            className="bg-white border border-red-200 rounded-xl p-4 flex justify-between items-center gap-4"
-                          >
-                            <div>
-                              <p className="font-bold text-neutral-800">
-                                {employee.name}
-                              </p>
-
-                              <p className="text-sm text-neutral-500">
-                                {employee.store}
-                              </p>
-                            </div>
-
-                            <span className="bg-red-100 text-red-700 text-xs px-3 py-1 rounded-full font-bold">
-                              Pendiente
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {chain.pending.length > 10 && (
-                      <p className="text-xs text-neutral-400 mt-3">
-                        Hay más pendientes. Revisa el módulo de Asistencia para detalle completo.
-                      </p>
-                    )}
-                  </div>
+                  <p className="text-sm text-neutral-600 mt-1">
+                    {chain.pending} pendiente(s) · {chain.coverage}% cobertura
+                  </p>
                 </div>
-              );
-            })}
+              ))}
+
+              {criticalChains.length > 5 && (
+                <p className="text-xs text-neutral-400">
+                  Hay más alertas. Revisa el módulo de asistencia.
+                </p>
+              )}
+            </div>
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Link
+            href="/admin/attendance"
+            className="bg-white rounded-2xl shadow-md p-6 hover:shadow-xl transition"
+          >
+            <p className="text-sm text-neutral-500">Acceso rápido</p>
+            <h3 className="text-xl font-bold text-neutral-900 mt-2">
+              Asistencia
+            </h3>
+          </Link>
+
+          <Link
+            href="/admin/store-visits"
+            className="bg-white rounded-2xl shadow-md p-6 hover:shadow-xl transition"
+          >
+            <p className="text-sm text-neutral-500">Rutas hoy</p>
+            <h3 className="text-xl font-bold text-neutral-900 mt-2">
+              {loading ? "..." : routeRecordsToday} movimientos
+            </h3>
+          </Link>
+
+          <Link
+            href="/admin/sales"
+            className="bg-white rounded-2xl shadow-md p-6 hover:shadow-xl transition"
+          >
+            <p className="text-sm text-neutral-500">Acceso rápido</p>
+            <h3 className="text-xl font-bold text-neutral-900 mt-2">
+              Ventas
+            </h3>
+          </Link>
+
+          <Link
+            href="/admin/supervisor-visits"
+            className="bg-white rounded-2xl shadow-md p-6 hover:shadow-xl transition"
+          >
+            <p className="text-sm text-neutral-500">Acceso rápido</p>
+            <h3 className="text-xl font-bold text-neutral-900 mt-2">
+              Visitas supervisor
+            </h3>
+          </Link>
         </div>
       </section>
     </main>

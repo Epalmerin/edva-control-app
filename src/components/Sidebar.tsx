@@ -36,7 +36,6 @@ export default function Sidebar({
       </div>
 
       <nav className="flex flex-col gap-3 flex-1">
-
         <Link
           href="/admin"
           className="bg-red-500 hover:bg-red-600 transition px-4 py-3 rounded-xl font-medium"
@@ -49,6 +48,13 @@ export default function Sidebar({
           className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
         >
           Asistencia
+        </Link>
+
+        <Link
+          href="/admin/store-visits"
+          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+        >
+          Rutas de tienda
         </Link>
 
         <Link
@@ -99,7 +105,6 @@ export default function Sidebar({
         >
           Visitas supervisor
         </Link>
-
       </nav>
 
       <button

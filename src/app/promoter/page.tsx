@@ -1,9 +1,67 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import PromoterBottomNav from "@/components/PromoterBottomNav";
+import { supabase } from "@/lib/supabase";
+
+type AssignedStore = {
+  chain_name: string | null;
+};
+
+const ROUTE_CHAINS = [
+  "MUEBLERIAS VILLARREAL",
+  "MUEBLERIAS VILLAREAL",
+  "MUEBLERIAS VALDEZ BALUARTE",
+];
+
+function normalizeText(value: string | null | undefined) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
 
 export default function PromoterPage() {
+  const [showRouteModule, setShowRouteModule] = useState(false);
+
+  const checkRouteModule = async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData.session?.user.id;
+
+    if (!userId) return;
+
+    const { data, error } = await supabase
+      .from("employee_store_assignments")
+      .select(`
+        stores:store_id (
+          chain_name
+        )
+      `)
+      .eq("employee_id", userId)
+      .eq("active", true);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const assignedStores = (data || [])
+      .map((item: any) => item.stores)
+      .filter(Boolean) as AssignedStore[];
+
+    const hasRouteChain = assignedStores.some((store) =>
+      ROUTE_CHAINS.includes(normalizeText(store.chain_name))
+    );
+
+    setShowRouteModule(hasRouteChain);
+  };
+
+  useEffect(() => {
+    checkRouteModule();
+  }, []);
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-neutral-100 to-neutral-200 pb-24">
       <div className="max-w-md mx-auto px-5 pt-6">
@@ -39,6 +97,26 @@ export default function PromoterPage() {
               </div>
             </div>
           </Link>
+
+          {showRouteModule && (
+            <Link href="/promoter/store-visits" className="group block">
+              <div className="bg-white rounded-[28px] border border-neutral-200 shadow-lg p-6 transition-all duration-300 group-hover:scale-[1.02] group-hover:shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-neutral-900">
+                      Ruta diaria
+                    </h2>
+
+                    <p className="text-neutral-500 mt-2 text-sm">
+                      Llegada y salida por tienda visitada.
+                    </p>
+                  </div>
+
+                  <div className="bg-purple-100 text-purple-600 w-16 h-16 rounded-2xl flex items-center justify-center text-3xl" />
+                </div>
+              </div>
+            </Link>
+          )}
 
           <Link href="/promoter/sales" className="group block">
             <div className="bg-white rounded-[28px] border border-neutral-200 shadow-lg p-6 transition-all duration-300 group-hover:scale-[1.02] group-hover:shadow-2xl">
