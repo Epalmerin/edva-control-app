@@ -17,17 +17,6 @@ type SaleRecord = {
     email: string;
   } | null;
   stores: {
-    id: string;
-    name: string;
-    chain_name: string | null;
-    brand_name: string | null;
-  } | null;
-};
-
-type AssignedStore = {
-  store_id: string;
-  stores: {
-    id: string;
     name: string;
     chain_name: string | null;
     brand_name: string | null;
@@ -54,13 +43,6 @@ type PromoterGroup = {
   stores: Set<string>;
 };
 
-type StoreWithoutSales = {
-  id: string;
-  name: string;
-  chain: string;
-  brand: string;
-};
-
 const months = [
   "Enero",
   "Febrero",
@@ -76,32 +58,8 @@ const months = [
   "Diciembre",
 ];
 
-function getMexicoTodayDate() {
-  const now = new Date();
-
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Mexico_City",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
-}
-
-function getMexicoDateMinusDays(days: number) {
-  const today = getMexicoTodayDate();
-  const date = new Date(`${today}T00:00:00-06:00`);
-  date.setDate(date.getDate() - days);
-
-  return date.toISOString().slice(0, 10);
-}
-
 export default function AdminSalesPage() {
   const [sales, setSales] = useState<SaleRecord[]>([]);
-  const [assignedStores, setAssignedStores] = useState<StoreWithoutSales[]>([]);
-  const [recentSalesStoreIds, setRecentSalesStoreIds] = useState<Set<string>>(
-    new Set()
-  );
-
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -133,110 +91,45 @@ export default function AdminSalesPage() {
       "0"
     )}-${String(lastDay).padStart(2, "0")}`;
 
-    const recentStartDate = getMexicoDateMinusDays(3);
+    const { data, error } = await supabase
+      .from("sales_records")
+      .select(`
+        id,
+        sale_date,
+        sku,
+        model,
+        ticket_number,
+        amount,
+        created_at,
+        profiles:employee_id (
+          name,
+          email
+        ),
+        stores:store_id (
+          name,
+          chain_name,
+          brand_name
+        )
+      `)
+      .gte("sale_date", startDate)
+      .lte("sale_date", endDate)
+      .order("sale_date", { ascending: false })
+      .order("created_at", { ascending: false });
 
-    const [salesResult, assignmentsResult, recentSalesResult] =
-      await Promise.all([
-        supabase
-          .from("sales_records")
-          .select(`
-            id,
-            sale_date,
-            sku,
-            model,
-            ticket_number,
-            amount,
-            created_at,
-            profiles:employee_id (
-              name,
-              email
-            ),
-            stores:store_id (
-              id,
-              name,
-              chain_name,
-              brand_name
-            )
-          `)
-          .gte("sale_date", startDate)
-          .lte("sale_date", endDate)
-          .order("sale_date", { ascending: false })
-          .order("created_at", { ascending: false }),
-
-        supabase
-          .from("employee_store_assignments")
-          .select(`
-            store_id,
-            stores:store_id (
-              id,
-              name,
-              chain_name,
-              brand_name
-            )
-          `)
-          .eq("active", true),
-
-        supabase
-          .from("sales_records")
-          .select("store_id")
-          .gte("sale_date", recentStartDate),
-      ]);
-
-    if (salesResult.error) {
-      setMessage(`Error al cargar ventas: ${salesResult.error.message}`);
-      setLoading(false);
-      return;
-    }
-
-    if (assignmentsResult.error) {
-      setMessage(
-        `Error al cargar tiendas asignadas: ${assignmentsResult.error.message}`
-      );
-      setLoading(false);
-      return;
-    }
-
-    if (recentSalesResult.error) {
-      setMessage(
-        `Error al cargar ventas recientes: ${recentSalesResult.error.message}`
-      );
+    if (error) {
+      setMessage(`Error al cargar ventas: ${error.message}`);
       setLoading(false);
       return;
     }
 
     setSales(
-      (salesResult.data || []).map((sale: any) => ({
+      (data || []).map((sale: any) => ({
         ...sale,
         profiles: Array.isArray(sale.profiles)
           ? sale.profiles[0]
           : sale.profiles,
         stores: Array.isArray(sale.stores) ? sale.stores[0] : sale.stores,
       }))
-    );
-
-    const uniqueStoresMap = new Map<string, StoreWithoutSales>();
-
-    (assignmentsResult.data || []).forEach((item: any) => {
-      const store = Array.isArray(item.stores) ? item.stores[0] : item.stores;
-
-      if (!store?.id) return;
-
-      uniqueStoresMap.set(store.id, {
-        id: store.id,
-        name: store.name || "SIN TIENDA",
-        chain: store.chain_name || "SIN CADENA",
-        brand: store.brand_name || "SIN MARCA",
-      });
-    });
-
-    setAssignedStores(Array.from(uniqueStoresMap.values()));
-
-    setRecentSalesStoreIds(
-      new Set(
-        (recentSalesResult.data || [])
-          .map((sale: any) => sale.store_id)
-          .filter(Boolean)
-      )
     );
 
     setLoading(false);
@@ -247,24 +140,16 @@ export default function AdminSalesPage() {
   }, [selectedMonth, selectedYear]);
 
   const chains = useMemo(() => {
-    const salesChains = sales.map(
-      (sale) => sale.stores?.chain_name || "SIN CADENA"
-    );
-
-    const assignedChains = assignedStores.map((store) => store.chain);
-
-    return Array.from(new Set([...salesChains, ...assignedChains])).sort();
-  }, [sales, assignedStores]);
+    return Array.from(
+      new Set(sales.map((sale) => sale.stores?.chain_name || "SIN CADENA"))
+    ).sort();
+  }, [sales]);
 
   const brands = useMemo(() => {
-    const salesBrands = sales.map(
-      (sale) => sale.stores?.brand_name || "SIN MARCA"
-    );
-
-    const assignedBrands = assignedStores.map((store) => store.brand);
-
-    return Array.from(new Set([...salesBrands, ...assignedBrands])).sort();
-  }, [sales, assignedStores]);
+    return Array.from(
+      new Set(sales.map((sale) => sale.stores?.brand_name || "SIN MARCA"))
+    ).sort();
+  }, [sales]);
 
   const filteredSales = useMemo(() => {
     return sales.filter((sale) => {
@@ -277,23 +162,6 @@ export default function AdminSalesPage() {
       return chainOk && brandOk;
     });
   }, [sales, selectedChain, selectedBrand]);
-
-  const filteredAssignedStores = useMemo(() => {
-    return assignedStores.filter((store) => {
-      const chainOk =
-        selectedChain === "TODAS" || store.chain === selectedChain;
-
-      const brandOk = selectedBrand === "TODAS" || store.brand === selectedBrand;
-
-      return chainOk && brandOk;
-    });
-  }, [assignedStores, selectedChain, selectedBrand]);
-
-  const storesWithoutSales3Days = useMemo(() => {
-    return filteredAssignedStores
-      .filter((store) => !recentSalesStoreIds.has(store.id))
-      .sort((a, b) => a.chain.localeCompare(b.chain) || a.name.localeCompare(b.name));
-  }, [filteredAssignedStores, recentSalesStoreIds]);
 
   const totalSales = filteredSales.reduce(
     (sum, sale) => sum + Number(sale.amount || 0),
@@ -456,10 +324,10 @@ export default function AdminSalesPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-2xl p-5 shadow-md">
             <p className="text-sm text-neutral-500">Venta mensual</p>
-            <p className="text-3xl font-black text-red-500 mt-2">
+            <p className="text-2xl font-black text-red-500 mt-2">
               {money(totalSales)}
             </p>
           </div>
@@ -477,16 +345,9 @@ export default function AdminSalesPage() {
           </div>
 
           <div className="bg-white rounded-2xl p-5 shadow-md">
-            <p className="text-sm text-neutral-500">Tiendas con venta</p>
+            <p className="text-sm text-neutral-500">Tiendas</p>
             <p className="text-3xl font-black text-red-500 mt-2">
               {storesCount}
-            </p>
-          </div>
-
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-5 shadow-md">
-            <p className="text-sm text-red-600">Sin venta +3 días</p>
-            <p className="text-3xl font-black text-red-600 mt-2">
-              {storesWithoutSales3Days.length}
             </p>
           </div>
         </div>
@@ -530,37 +391,6 @@ export default function AdminSalesPage() {
           </div>
         )}
 
-        {storesWithoutSales3Days.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-md p-6 mb-8">
-            <h2 className="text-2xl font-bold text-neutral-800 mb-2">
-              Alertas: tiendas sin venta en más de 3 días
-            </h2>
-
-            <p className="text-sm text-neutral-500 mb-5">
-              Tiendas asignadas sin registros de venta recientes.
-            </p>
-
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 max-h-[420px] overflow-y-auto pr-2">
-              {storesWithoutSales3Days.map((store) => (
-                <div
-                  key={store.id}
-                  className="border border-red-200 bg-red-50 rounded-xl p-4"
-                >
-                  <p className="font-bold text-neutral-800">{store.name}</p>
-
-                  <p className="text-sm text-neutral-500">
-                    {store.chain} · {store.brand}
-                  </p>
-
-                  <p className="text-xs font-bold text-red-600 mt-2">
-                    Sin venta registrada en los últimos 3 días
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-8">
           <div className="bg-white rounded-2xl shadow-md p-6">
             <h2 className="text-2xl font-bold text-neutral-800 mb-5">
@@ -568,7 +398,7 @@ export default function AdminSalesPage() {
             </h2>
 
             <div className="space-y-3">
-              {storeRanking.map((store, index) => (
+              {storeRanking.slice(0, 15).map((store, index) => (
                 <button
                   key={store.key}
                   onClick={() =>
@@ -607,7 +437,7 @@ export default function AdminSalesPage() {
             </h2>
 
             <div className="space-y-3">
-              {promoterRanking.map((promoter, index) => (
+              {promoterRanking.slice(0, 15).map((promoter, index) => (
                 <div key={promoter.key} className="border rounded-xl p-4">
                   <div className="flex justify-between gap-4">
                     <div>
