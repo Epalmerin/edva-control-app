@@ -31,29 +31,43 @@ export default function LoginPage() {
     }
 
     const { data: sessionData } = await supabase.auth.getSession();
-
     const userId = sessionData.session?.user.id;
 
-    const { data: profile } = await supabase
+    if (!userId) {
+      setMessage("No se pudo validar la sesión.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", userId)
-      .single();
+      .maybeSingle();
 
-    if (!profile) {
+    if (profileError || !profile) {
       setMessage("No se encontró perfil.");
       setLoading(false);
       return;
     }
 
-    if (profile.role === "ADMIN") {
+    const role = String(profile.role || "").trim().toUpperCase();
+
+    if (role === "ADMIN") {
       router.push("/admin");
-    } else if (profile.role === "PROMOTOR") {
+    } else if (role === "PROMOTOR") {
       router.push("/promoter");
-    } else if (profile.role === "SUPERVISOR") {
+    } else if (role === "SUPERVISOR") {
       router.push("/supervisor");
-    } else if (profile.role === "RH") {
+    } else if (role === "SUPERVISOR_VILLARREAL") {
+      router.push("/supervisor/villarreal");
+    } else if (role === "RH") {
       router.push("/rh");
+    } else {
+      setMessage(`Rol no autorizado: ${role}`);
+      await supabase.auth.signOut();
+      setLoading(false);
+      return;
     }
 
     setLoading(false);
@@ -62,7 +76,6 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-neutral-100 flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-6 md:p-10">
-        
         <div className="flex flex-col items-center mb-8">
           <h1 className="text-5xl font-black tracking-tight text-neutral-900">
             ed<span className="text-red-500">va</span>
