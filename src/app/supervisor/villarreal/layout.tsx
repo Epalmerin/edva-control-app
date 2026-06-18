@@ -17,7 +17,7 @@ export default function SupervisorLayout({
       const userId = data.session?.user.id;
 
       if (!userId) {
-        window.location.href = "/";
+        window.location.replace("/");
         return;
       }
 
@@ -25,19 +25,22 @@ export default function SupervisorLayout({
         .from("profiles")
         .select("role")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
       if (error || !profile) {
         await supabase.auth.signOut();
-        window.location.href = "/";
+        window.location.replace("/");
         return;
       }
 
-      const role = profile.role?.toUpperCase();
+      const role = String(profile.role || "").trim().toUpperCase();
 
-      if (role !== "ADMIN" && role !== "SUPERVISOR_VILLARREAL") {
+      const canAccess =
+        role === "ADMIN" || role === "SUPERVISOR_VILLARREAL";
+
+      if (!canAccess) {
         await supabase.auth.signOut();
-        window.location.href = "/";
+        window.location.replace("/");
         return;
       }
 
