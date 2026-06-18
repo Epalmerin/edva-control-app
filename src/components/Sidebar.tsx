@@ -65,6 +65,13 @@ export default function Sidebar({
         </Link>
 
         <Link
+          href="/admin/intelligence/sears"
+          className="bg-blue-900 hover:bg-blue-800 transition px-4 py-3 rounded-xl font-medium"
+        >
+          🛏️ Inteligencia Sears
+        </Link>
+
+        <Link
           href="/admin/incidences"
           className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
         >
