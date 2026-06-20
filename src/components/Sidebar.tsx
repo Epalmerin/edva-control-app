@@ -68,7 +68,7 @@ export default function Sidebar({
           href="/admin/intelligence/sears"
           className="bg-blue-900 hover:bg-blue-800 transition px-4 py-3 rounded-xl font-medium"
         >
-          🛏️ Inteligencia Sears
+           Inteligencia Sears
         </Link>
 
         <Link

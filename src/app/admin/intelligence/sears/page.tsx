@@ -47,6 +47,14 @@ type IntelligenceRecord = {
   serta_bedroom: number;
   serta_promoters: number;
 
+  macao_exhibited: boolean;
+  naste_exhibited: boolean;
+  collins_exhibited: boolean;
+  lipa_exhibited: boolean;
+  secret_exhibited: boolean;
+  muga_exhibited: boolean;
+  cassat_exhibited: boolean;
+
   comments: string | null;
   updated_at?: string;
 };
@@ -85,6 +93,14 @@ const emptyRecord = (storeId: string): IntelligenceRecord => ({
   serta_floor: 0,
   serta_bedroom: 0,
   serta_promoters: 0,
+
+  macao_exhibited: false,
+  naste_exhibited: false,
+  collins_exhibited: false,
+  lipa_exhibited: false,
+  secret_exhibited: false,
+  muga_exhibited: false,
+  cassat_exhibited: false,
 
   comments: "",
 });
@@ -177,6 +193,21 @@ export default function SearsIntelligencePage() {
     }));
   };
 
+  const updateBooleanField = (
+    field: keyof IntelligenceRecord,
+    value: boolean
+  ) => {
+    if (!selectedStoreId || !selectedRecord) return;
+
+    setRecords((prev) => ({
+      ...prev,
+      [selectedStoreId]: {
+        ...selectedRecord,
+        [field]: value,
+      },
+    }));
+  };
+
   const calculateStoreMetrics = (record: IntelligenceRecord) => {
     const restonicTotal =
       num(record.restonic_floor) + num(record.restonic_bedroom);
@@ -245,18 +276,54 @@ export default function SearsIntelligencePage() {
     const hiddenRestonic =
       restonicTotal > 0 ? (num(record.restonic_bedroom) / restonicTotal) * 100 : 0;
 
+    const portfolioModels = [
+      { name: "Macao", exhibited: record.macao_exhibited },
+      { name: "Naste", exhibited: record.naste_exhibited },
+      { name: "Collins", exhibited: record.collins_exhibited },
+      { name: "Lipa", exhibited: record.lipa_exhibited },
+      { name: "Secret", exhibited: record.secret_exhibited },
+      { name: "Muga", exhibited: record.muga_exhibited },
+      { name: "Cassat", exhibited: record.cassat_exhibited },
+    ];
+
+    const portfolioCount = portfolioModels.filter((model) => model.exhibited).length;
+    const portfolioCoverage = (portfolioCount / 7) * 100;
+    const missingModels = portfolioModels
+      .filter((model) => !model.exhibited)
+      .map((model) => model.name);
+
     let status = "🟢 Estable";
-    let action = "Mantener seguimiento.";
+    const actions: string[] = [];
 
     if (shareExhibition < 25 || visibilityShare < 25) {
       status = "🔴 Riesgo alto";
-      action = "Solicitar incremento de exhibición en piso.";
-    } else if (commercialPressure >= 60) {
-      status = "🟡 Competencia fuerte";
-      action = "Reforzar presencia comercial y seguimiento del promotor.";
-    } else if (hiddenRestonic >= 50) {
-      status = "🟡 Baja visibilidad";
-      action = "Mover modelos Restonic de recámara a exhibición en piso.";
+      actions.push("Solicitar incremento de exhibición en piso.");
+    }
+
+    if (commercialPressure >= 60) {
+      if (status !== "🔴 Riesgo alto") status = "🟡 Competencia fuerte";
+      actions.push("Reforzar presencia comercial y seguimiento del promotor.");
+    }
+
+    if (hiddenRestonic >= 50) {
+      if (status === "🟢 Estable") status = "🟡 Baja visibilidad";
+      actions.push("Mover modelos Restonic de recámara a exhibición en piso.");
+    }
+
+    if (portfolioCoverage < 70) {
+      status = "🔴 Portafolio incompleto";
+      actions.push(
+        `Completar portafolio Restonic. Faltan: ${missingModels.join(", ")}.`
+      );
+    } else if (portfolioCoverage < 100) {
+      if (status === "🟢 Estable") status = "🟡 Portafolio con oportunidad";
+      actions.push(
+        `Revisar modelos faltantes del portafolio: ${missingModels.join(", ")}.`
+      );
+    }
+
+    if (actions.length === 0) {
+      actions.push("Mantener seguimiento.");
     }
 
     return {
@@ -267,8 +334,11 @@ export default function SearsIntelligencePage() {
       visibilityShare,
       commercialPressure,
       hiddenRestonic,
+      portfolioCount,
+      portfolioCoverage,
+      missingModels,
       status,
-      action,
+      actions,
     };
   };
 
@@ -284,6 +354,7 @@ export default function SearsIntelligencePage() {
         avgShare: 0,
         avgVisibility: 0,
         avgPressure: 0,
+        avgPortfolio: 0,
         riskStores: 0,
         opportunities: 0,
       };
@@ -301,14 +372,21 @@ export default function SearsIntelligencePage() {
       avgPressure:
         metrics.reduce((sum, item) => sum + item.commercialPressure, 0) /
         active.length,
+      avgPortfolio:
+        metrics.reduce((sum, item) => sum + item.portfolioCoverage, 0) /
+        active.length,
       riskStores: metrics.filter(
-        (item) => item.shareExhibition < 25 || item.visibilityShare < 25
+        (item) =>
+          item.shareExhibition < 25 ||
+          item.visibilityShare < 25 ||
+          item.portfolioCoverage < 70
       ).length,
       opportunities: metrics.filter(
         (item) =>
           item.shareExhibition < 35 ||
           item.visibilityShare < 35 ||
-          item.commercialPressure >= 60
+          item.commercialPressure >= 60 ||
+          item.portfolioCoverage < 100
       ).length,
     };
   }, [records]);
@@ -358,7 +436,7 @@ export default function SearsIntelligencePage() {
               Inteligencia Comercial Sears
             </h1>
             <p className="text-neutral-500 mt-2">
-              Share de exhibición, visibilidad, presión comercial y acciones recomendadas.
+              Share de exhibición, visibilidad, presión comercial, portafolio y acciones recomendadas.
             </p>
           </div>
 
@@ -370,10 +448,11 @@ export default function SearsIntelligencePage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-8">
           <Kpi title="Share Exhibición" value={percent(dashboard.avgShare)} />
           <Kpi title="Visibilidad Restonic" value={percent(dashboard.avgVisibility)} />
           <Kpi title="Presión Comercial" value={percent(dashboard.avgPressure)} />
+          <Kpi title="Cobertura Portafolio" value={percent(dashboard.avgPortfolio)} />
           <Kpi title="Tiendas en Riesgo" value={loading ? "..." : dashboard.riskStores} />
           <Kpi title="Oportunidades" value={loading ? "..." : dashboard.opportunities} />
         </div>
@@ -413,6 +492,22 @@ export default function SearsIntelligencePage() {
                   promoters="restonic_promoters"
                 />
 
+                <div className="border rounded-2xl p-4">
+                  <h3 className="font-black text-neutral-800 mb-4">
+                    Portafolio Restonic Sears
+                  </h3>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <CheckBoxField label="Macao" checked={selectedRecord.macao_exhibited} onChange={(v) => updateBooleanField("macao_exhibited", v)} />
+                    <CheckBoxField label="Naste" checked={selectedRecord.naste_exhibited} onChange={(v) => updateBooleanField("naste_exhibited", v)} />
+                    <CheckBoxField label="Collins" checked={selectedRecord.collins_exhibited} onChange={(v) => updateBooleanField("collins_exhibited", v)} />
+                    <CheckBoxField label="Lipa" checked={selectedRecord.lipa_exhibited} onChange={(v) => updateBooleanField("lipa_exhibited", v)} />
+                    <CheckBoxField label="Secret" checked={selectedRecord.secret_exhibited} onChange={(v) => updateBooleanField("secret_exhibited", v)} />
+                    <CheckBoxField label="Muga" checked={selectedRecord.muga_exhibited} onChange={(v) => updateBooleanField("muga_exhibited", v)} />
+                    <CheckBoxField label="Cassat" checked={selectedRecord.cassat_exhibited} onChange={(v) => updateBooleanField("cassat_exhibited", v)} />
+                  </div>
+                </div>
+
                 <BrandFields title="América" record={selectedRecord} updateField={updateField} floor="america_floor" bedroom="america_bedroom" promoters="america_promoters" />
                 <BrandFields title="Sealy" record={selectedRecord} updateField={updateField} floor="sealy_floor" bedroom="sealy_bedroom" promoters="sealy_promoters" />
                 <BrandFields title="Spring Air" record={selectedRecord} updateField={updateField} floor="springair_floor" bedroom="springair_bedroom" promoters="springair_promoters" />
@@ -450,6 +545,7 @@ export default function SearsIntelligencePage() {
                 <Diagnosis label="Visibilidad Restonic" value={percent(selectedMetrics.visibilityShare)} />
                 <Diagnosis label="Presión comercial" value={percent(selectedMetrics.commercialPressure)} />
                 <Diagnosis label="Restonic en recámara" value={percent(selectedMetrics.hiddenRestonic)} />
+                <Diagnosis label="Cobertura portafolio" value={`${selectedMetrics.portfolioCount}/7 · ${percent(selectedMetrics.portfolioCoverage)}`} />
 
                 <div className="bg-neutral-900 text-white rounded-2xl p-5">
                   <p className="text-sm text-neutral-300">Semáforo</p>
@@ -457,11 +553,26 @@ export default function SearsIntelligencePage() {
                 </div>
 
                 <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
-                  <p className="text-sm text-red-600 font-bold">Acción recomendada</p>
-                  <p className="text-neutral-800 font-semibold mt-2">
-                    {selectedMetrics.action}
-                  </p>
+                  <p className="text-sm text-red-600 font-bold">Acciones recomendadas</p>
+                  <ul className="list-disc pl-5 mt-2 space-y-1">
+                    {selectedMetrics.actions.map((action, index) => (
+                      <li key={index} className="text-neutral-800 font-semibold">
+                        {action}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
+
+                {selectedMetrics.missingModels.length > 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-5">
+                    <p className="text-sm text-yellow-700 font-bold">
+                      Modelos faltantes
+                    </p>
+                    <p className="text-neutral-800 font-semibold mt-2">
+                      {selectedMetrics.missingModels.join(", ")}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -551,5 +662,26 @@ function InputNumber({
         className="w-full mt-1 px-4 py-3 border rounded-xl"
       />
     </div>
+  );
+}
+
+function CheckBoxField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-3 bg-neutral-100 rounded-xl px-4 py-3 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="text-sm font-semibold text-neutral-700">{label}</span>
+    </label>
   );
 }
