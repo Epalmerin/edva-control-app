@@ -26,6 +26,12 @@ type SaleRecord = {
   } | null;
 };
 
+const inputClass =
+  "w-full mt-1 px-4 py-4 border border-neutral-300 rounded-2xl text-neutral-950 font-semibold placeholder:text-neutral-400 bg-white outline-none focus:ring-2 focus:ring-red-200 focus:border-red-500";
+
+const selectClass =
+  "w-full mt-1 px-4 py-4 border border-neutral-300 rounded-2xl text-neutral-950 font-semibold bg-white outline-none focus:ring-2 focus:ring-red-200 focus:border-red-500";
+
 const months = [
   "Enero",
   "Febrero",
@@ -280,12 +286,12 @@ export default function PromoterSalesPage() {
 
           <form onSubmit={handleSaveSale} className="space-y-4">
             <div>
-              <label className="text-sm font-semibold text-neutral-700">
+              <label className="text-sm font-semibold text-neutral-800">
                 Tienda
               </label>
 
               <select
-                className="w-full mt-1 px-4 py-4 border rounded-2xl"
+                className={selectClass}
                 value={storeId}
                 onChange={(e) => setStoreId(e.target.value)}
                 required
@@ -307,13 +313,13 @@ export default function PromoterSalesPage() {
             </div>
 
             <div>
-              <label className="text-sm font-semibold text-neutral-700">
+              <label className="text-sm font-semibold text-neutral-800">
                 Fecha
               </label>
 
               <input
                 type="date"
-                className="w-full mt-1 px-4 py-4 border rounded-2xl"
+                className={inputClass}
                 value={saleDate}
                 onChange={(e) => setSaleDate(e.target.value)}
                 required
@@ -322,12 +328,12 @@ export default function PromoterSalesPage() {
 
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label className="text-sm font-semibold text-neutral-700">
+                <label className="text-sm font-semibold text-neutral-800">
                   SKU
                 </label>
 
                 <input
-                  className="w-full mt-1 px-4 py-4 border rounded-2xl"
+                  className={inputClass}
                   value={sku}
                   onChange={(e) => setSku(e.target.value)}
                   placeholder="SKU"
@@ -335,12 +341,12 @@ export default function PromoterSalesPage() {
               </div>
 
               <div>
-                <label className="text-sm font-semibold text-neutral-700">
+                <label className="text-sm font-semibold text-neutral-800">
                   Modelo
                 </label>
 
                 <input
-                  className="w-full mt-1 px-4 py-4 border rounded-2xl"
+                  className={inputClass}
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   placeholder="Modelo"
@@ -349,12 +355,12 @@ export default function PromoterSalesPage() {
             </div>
 
             <div>
-              <label className="text-sm font-semibold text-neutral-700">
+              <label className="text-sm font-semibold text-neutral-800">
                 Número de ticket
               </label>
 
               <input
-                className="w-full mt-1 px-4 py-4 border rounded-2xl"
+                className={inputClass}
                 value={ticketNumber}
                 onChange={(e) => setTicketNumber(e.target.value)}
                 placeholder="Ticket"
@@ -363,14 +369,14 @@ export default function PromoterSalesPage() {
             </div>
 
             <div>
-              <label className="text-sm font-semibold text-neutral-700">
+              <label className="text-sm font-semibold text-neutral-800">
                 Monto total
               </label>
 
               <input
                 type="number"
                 step="0.01"
-                className="w-full mt-1 px-4 py-4 border rounded-2xl"
+                className={inputClass}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
@@ -388,7 +394,7 @@ export default function PromoterSalesPage() {
           </form>
 
           {message && (
-            <div className="mt-5 bg-neutral-100 rounded-2xl p-4 text-sm font-medium text-neutral-700">
+            <div className="mt-5 bg-neutral-100 rounded-2xl p-4 text-sm font-medium text-neutral-800">
               {message}
             </div>
           )}
@@ -401,7 +407,7 @@ export default function PromoterSalesPage() {
                 Mi histórico
               </h2>
               <p className="text-sm text-neutral-500">
-                Consulta tus ventas por mes y por día.
+                Consulta tus ventas por mes.
               </p>
             </div>
           </div>
@@ -410,7 +416,7 @@ export default function PromoterSalesPage() {
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="px-4 py-3 border rounded-2xl"
+              className="px-4 py-3 border border-neutral-300 rounded-2xl text-neutral-950 font-semibold bg-white"
             >
               {months.map((month, index) => (
                 <option key={month} value={index + 1}>
@@ -422,7 +428,7 @@ export default function PromoterSalesPage() {
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="px-4 py-3 border rounded-2xl"
+              className="px-4 py-3 border border-neutral-300 rounded-2xl text-neutral-950 font-semibold bg-white"
             >
               {[2025, 2026, 2027].map((year) => (
                 <option key={year}>{year}</option>
@@ -432,21 +438,21 @@ export default function PromoterSalesPage() {
 
           <div className="grid grid-cols-3 gap-3 mb-5">
             <div className="bg-neutral-100 rounded-2xl p-3">
-              <p className="text-[11px] text-neutral-500">Total</p>
+              <p className="text-[11px] text-neutral-600">Total</p>
               <p className="text-lg font-black text-red-500">
                 {money(monthlyTotal)}
               </p>
             </div>
 
             <div className="bg-neutral-100 rounded-2xl p-3">
-              <p className="text-[11px] text-neutral-500">Tickets</p>
+              <p className="text-[11px] text-neutral-600">Tickets</p>
               <p className="text-lg font-black text-red-500">
                 {monthlyTickets}
               </p>
             </div>
 
             <div className="bg-neutral-100 rounded-2xl p-3">
-              <p className="text-[11px] text-neutral-500">Promedio</p>
+              <p className="text-[11px] text-neutral-600">Promedio</p>
               <p className="text-lg font-black text-red-500">
                 {money(monthlyAverage)}
               </p>
@@ -454,11 +460,11 @@ export default function PromoterSalesPage() {
           </div>
 
           {historyLoading && (
-            <p className="text-sm text-neutral-500">Cargando histórico...</p>
+            <p className="text-sm text-neutral-600">Cargando histórico...</p>
           )}
 
           {!historyLoading && monthlySales.length === 0 && (
-            <p className="text-sm text-neutral-500">
+            <p className="text-sm text-neutral-600">
               No tienes ventas registradas en este mes.
             </p>
           )}
@@ -479,70 +485,25 @@ export default function PromoterSalesPage() {
                 <div className="divide-y">
                   {day.sales.map((sale) => (
                     <div key={sale.id} className="p-4 bg-white">
-                      <div className="flex justify-between gap-3 mb-3">
+                      <div className="flex justify-between gap-3">
                         <div>
-                          <p className="text-xs text-neutral-400">
-                            Venta registrada
-                          </p>
-
-                          <p className="font-black text-neutral-900">
+                          <p className="font-bold text-neutral-900">
                             Ticket: {sale.ticket_number}
                           </p>
-                        </div>
 
-                        <p className="font-black text-red-500 text-lg">
-                          {money(Number(sale.amount))}
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-2 text-sm">
-                        <div className="bg-neutral-50 rounded-xl p-3">
-                          <p className="text-neutral-400 text-xs">Tienda</p>
-                          <p className="font-semibold text-neutral-800">
+                          <p className="text-sm text-neutral-700">
                             {sale.stores?.name || "Sin tienda"}
                           </p>
-                        </div>
 
-                        <div className="bg-neutral-50 rounded-xl p-3">
-                          <p className="text-neutral-400 text-xs">
-                            Cadena / Marca
-                          </p>
-                          <p className="font-semibold text-neutral-800">
-                            {sale.stores?.chain_name || "Sin cadena"} /{" "}
-                            {sale.stores?.brand_name || "Sin marca"}
+                          <p className="text-xs text-neutral-500 mt-1">
+                            SKU: {sale.sku || "N/A"} · Modelo:{" "}
+                            {sale.model || "N/A"}
                           </p>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="bg-neutral-50 rounded-xl p-3">
-                            <p className="text-neutral-400 text-xs">SKU</p>
-                            <p className="font-semibold text-neutral-800">
-                              {sale.sku || "N/A"}
-                            </p>
-                          </div>
-
-                          <div className="bg-neutral-50 rounded-xl p-3">
-                            <p className="text-neutral-400 text-xs">Modelo</p>
-                            <p className="font-semibold text-neutral-800">
-                              {sale.model || "N/A"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="bg-neutral-50 rounded-xl p-3">
-                          <p className="text-neutral-400 text-xs">
-                            Hora de captura
-                          </p>
-                          <p className="font-semibold text-neutral-800">
-                            {new Date(sale.created_at).toLocaleTimeString(
-                              "es-MX",
-                              {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }
-                            )}
-                          </p>
-                        </div>
+                        <p className="font-black text-red-500">
+                          {money(Number(sale.amount))}
+                        </p>
                       </div>
                     </div>
                   ))}
