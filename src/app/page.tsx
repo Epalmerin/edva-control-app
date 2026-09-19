@@ -19,38 +19,56 @@ export default function LoginPage() {
     setLoading(true);
     setMessage("");
 
+    // 1. Validar correo y contraseña
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      setMessage(error.message);
+      setMessage("Correo electrónico o contraseña incorrectos.");
       setLoading(false);
       return;
     }
 
+    // 2. Obtener usuario autenticado
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData.session?.user.id;
 
     if (!userId) {
       setMessage("No se pudo validar la sesión.");
+      await supabase.auth.signOut();
       setLoading(false);
       return;
     }
 
+    // 3. Consultar rol y estatus del empleado
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, active")
       .eq("id", userId)
       .maybeSingle();
 
     if (profileError || !profile) {
-      setMessage("No se encontró perfil.");
+      setMessage("No se encontró el perfil del usuario.");
+      await supabase.auth.signOut();
       setLoading(false);
       return;
     }
 
+    // 4. Bloquear usuarios dados de baja
+    if (profile.active === false) {
+      await supabase.auth.signOut();
+
+      setMessage(
+        "Tu usuario se encuentra inactivo. Si consideras que se trata de un error, contacta al administrador."
+      );
+
+      setLoading(false);
+      return;
+    }
+
+    // 5. Validar rol
     const role = String(profile.role || "").trim().toUpperCase();
 
     if (role === "ADMIN") {
@@ -130,7 +148,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full bg-red-500 hover:bg-red-600 transition text-white font-bold py-4 rounded-2xl disabled:opacity-60"
           >
-            {loading ? "Ingresando..." : "Ingresar"}
+            {loading ? "Validando acceso..." : "Ingresar"}
           </button>
         </form>
 
