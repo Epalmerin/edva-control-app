@@ -62,7 +62,12 @@ export default function Sidebar({
           className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
         >
           Ventas
-        </Link>
+        </Link><Link
+  href="/admin/sales-targets"
+  className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+>
+  Metas de venta
+</Link>
 
         <Link
           href="/admin/intelligence/sears"

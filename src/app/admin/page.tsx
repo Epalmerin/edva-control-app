@@ -453,7 +453,15 @@ export default function AdminPage() {
             <h3 className="text-xl font-bold text-neutral-900 mt-2">
               Visitas supervisor
             </h3>
-          </Link>
+          </Link><Link
+  href="/admin/sales-targets"
+  className="bg-white rounded-2xl shadow-md p-6 hover:shadow-xl transition"
+>
+  <p className="text-sm text-neutral-500">Acceso rápido</p>
+  <h3 className="text-xl font-bold text-neutral-900 mt-2">
+    Metas de venta
+  </h3>
+</Link>
         </div>
       </section>
     </main>
