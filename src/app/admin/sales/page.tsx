@@ -12,6 +12,7 @@ type SaleRecord = {
   ticket_number: string;
   amount: number;
   created_at: string;
+  store_id: string;
   profiles: {
     name: string;
     email: string;
@@ -34,13 +35,11 @@ type StoreGroup = {
   sales: SaleRecord[];
 };
 
-type PromoterGroup = {
-  key: string;
+type VisibleStore = {
+  id: string;
   name: string;
-  email: string;
-  total: number;
-  tickets: number;
-  stores: Set<string>;
+  chain_name: string | null;
+  brand_name: string | null;
 };
 
 const months = [
@@ -62,6 +61,8 @@ export default function AdminSalesPage() {
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+  const [visibleStores, setVisibleStores] = useState<VisibleStore[]>([]);
 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -75,7 +76,64 @@ export default function AdminSalesPage() {
       currency: "MXN",
     });
 
+  const loadVisibleStores = async () => {
+    if (!activeAccountId) return;
+
+    if (activeAccountId === "all") {
+      const { data, error } = await supabase
+        .from("stores")
+        .select("id, name, chain_name, brand_name")
+        .order("chain_name")
+        .order("name");
+
+      if (error) {
+        console.error("Error cargando tiendas:", error);
+        setVisibleStores([]);
+        return;
+      }
+
+      setVisibleStores(data || []);
+      return;
+    }
+
+    const { data: accountStoreRows, error: accountStoresError } = await supabase
+      .from("account_stores")
+      .select("store_id")
+      .eq("account_id", activeAccountId);
+
+    if (accountStoresError) {
+      console.error("Error cargando tiendas de la cuenta:", accountStoresError);
+      setVisibleStores([]);
+      return;
+    }
+
+    const storeIds = (accountStoreRows || []).map(
+      (item: { store_id: string }) => item.store_id
+    );
+
+    if (storeIds.length === 0) {
+      setVisibleStores([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("stores")
+      .select("id, name, chain_name, brand_name")
+      .in("id", storeIds)
+      .order("name");
+
+    if (error) {
+      console.error("Error cargando tiendas:", error);
+      setVisibleStores([]);
+      return;
+    }
+
+    setVisibleStores(data || []);
+  };
+
   const loadSales = async () => {
+    if (!activeAccountId) return;
+
     setLoading(true);
     setMessage("");
 
@@ -91,7 +149,35 @@ export default function AdminSalesPage() {
       "0"
     )}-${String(lastDay).padStart(2, "0")}`;
 
-    const { data, error } = await supabase
+    let allowedStoreIds: string[] | null = null;
+
+    if (activeAccountId !== "all") {
+      const { data: accountStores, error: accountStoresError } = await supabase
+        .from("account_stores")
+        .select("store_id")
+        .eq("account_id", activeAccountId);
+
+      if (accountStoresError) {
+        setSales([]);
+        setMessage(
+          `Error al cargar las tiendas de la cuenta: ${accountStoresError.message}`
+        );
+        setLoading(false);
+        return;
+      }
+
+      allowedStoreIds = (accountStores || []).map(
+        (item: { store_id: string }) => item.store_id
+      );
+
+      if (allowedStoreIds.length === 0) {
+        setSales([]);
+        setLoading(false);
+        return;
+      }
+    }
+
+    let query = supabase
       .from("sales_records")
       .select(`
         id,
@@ -101,6 +187,7 @@ export default function AdminSalesPage() {
         ticket_number,
         amount,
         created_at,
+        store_id,
         profiles:employee_id (
           name,
           email
@@ -112,11 +199,18 @@ export default function AdminSalesPage() {
         )
       `)
       .gte("sale_date", startDate)
-      .lte("sale_date", endDate)
+      .lte("sale_date", endDate);
+
+    if (allowedStoreIds) {
+      query = query.in("store_id", allowedStoreIds);
+    }
+
+    const { data, error } = await query
       .order("sale_date", { ascending: false })
       .order("created_at", { ascending: false });
 
     if (error) {
+      setSales([]);
       setMessage(`Error al cargar ventas: ${error.message}`);
       setLoading(false);
       return;
@@ -136,8 +230,34 @@ export default function AdminSalesPage() {
   };
 
   useEffect(() => {
+    const savedAccount =
+      localStorage.getItem("edva_active_account") || "all";
+
+    setActiveAccountId(savedAccount);
+
+    const handleAccountChange = (event: Event) => {
+      const customEvent = event as CustomEvent<string>;
+
+      setActiveAccountId(customEvent.detail || "all");
+      setSelectedChain("TODAS");
+      setSelectedBrand("TODAS");
+      setExpandedStore(null);
+      setMessage("");
+    };
+
+    window.addEventListener("edva-account-change", handleAccountChange);
+
+    return () => {
+      window.removeEventListener("edva-account-change", handleAccountChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeAccountId) return;
+
     loadSales();
-  }, [selectedMonth, selectedYear]);
+    loadVisibleStores();
+  }, [activeAccountId, selectedMonth, selectedYear]);
 
   const chains = useMemo(() => {
     return Array.from(
@@ -170,24 +290,36 @@ export default function AdminSalesPage() {
 
   const tickets = filteredSales.length;
 
-  const promoters = new Set(
-    filteredSales.map((sale) => sale.profiles?.email).filter(Boolean)
-  ).size;
 
-  const storesCount = new Set(
-    filteredSales.map((sale) => sale.stores?.name).filter(Boolean)
-  ).size;
+  const storesCount = visibleStores.length;
 
   const averageTicket = tickets > 0 ? totalSales / tickets : 0;
 
   const storeRanking = useMemo<StoreGroup[]>(() => {
     const map = new Map<string, StoreGroup>();
 
+    visibleStores.forEach((store) => {
+      const chain = store.chain_name || "SIN CADENA";
+      const brand = store.brand_name || "SIN MARCA";
+      const key = store.id;
+
+      map.set(key, {
+        key,
+        chain,
+        brand,
+        store: store.name,
+        total: 0,
+        tickets: 0,
+        promoters: new Set<string>(),
+        sales: [],
+      });
+    });
+
     filteredSales.forEach((sale) => {
       const chain = sale.stores?.chain_name || "SIN CADENA";
       const brand = sale.stores?.brand_name || "SIN MARCA";
       const store = sale.stores?.name || "SIN TIENDA";
-      const key = `${chain}-${brand}-${store}`;
+      const key = sale.store_id;
 
       if (!map.has(key)) {
         map.set(key, {
@@ -213,42 +345,18 @@ export default function AdminSalesPage() {
       }
     });
 
-    return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [filteredSales]);
-
-  const promoterRanking = useMemo<PromoterGroup[]>(() => {
-    const map = new Map<string, PromoterGroup>();
-
-    filteredSales.forEach((sale) => {
-      const email = sale.profiles?.email || `SIN-CORREO-${sale.id}`;
-      const name = sale.profiles?.name || "Sin promotor";
-
-      if (!map.has(email)) {
-        map.set(email, {
-          key: email,
-          name,
-          email,
-          total: 0,
-          tickets: 0,
-          stores: new Set<string>(),
-        });
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.chain !== b.chain) {
+        return a.chain.localeCompare(b.chain, "es");
       }
 
-      const group = map.get(email)!;
-
-      group.total += Number(sale.amount || 0);
-      group.tickets += 1;
-
-      if (sale.stores?.name) {
-        group.stores.add(sale.stores.name);
+      if (b.total !== a.total) {
+        return b.total - a.total;
       }
+
+      return a.store.localeCompare(b.store, "es");
     });
-
-    return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [filteredSales]);
-
-  const topStore = storeRanking[0];
-  const topPromoter = promoterRanking[0];
+  }, [filteredSales, visibleStores]);
 
   return (
     <main className="min-h-screen bg-neutral-100 flex">
@@ -324,58 +432,39 @@ export default function AdminSalesPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-2xl p-5 shadow-md">
-            <p className="text-sm text-neutral-500">Venta mensual</p>
-            <p className="text-2xl font-black text-red-500 mt-2">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
+          <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-neutral-200">
+            <p className="text-xs uppercase tracking-wide text-neutral-400">
+              Venta mensual
+            </p>
+            <p className="text-xl font-black text-red-500 mt-1">
               {money(totalSales)}
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl p-5 shadow-md">
-            <p className="text-sm text-neutral-500">Tickets</p>
-            <p className="text-3xl font-black text-red-500 mt-2">{tickets}</p>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 shadow-md">
-            <p className="text-sm text-neutral-500">Promotores</p>
-            <p className="text-3xl font-black text-red-500 mt-2">
-              {promoters}
+          <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-neutral-200">
+            <p className="text-xs uppercase tracking-wide text-neutral-400">
+              Tickets
             </p>
+            <p className="text-xl font-black text-neutral-900 mt-1">{tickets}</p>
           </div>
 
-          <div className="bg-white rounded-2xl p-5 shadow-md">
-            <p className="text-sm text-neutral-500">Tiendas</p>
-            <p className="text-3xl font-black text-red-500 mt-2">
+          <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-neutral-200">
+            <p className="text-xs uppercase tracking-wide text-neutral-400">
+              Tiendas
+            </p>
+            <p className="text-xl font-black text-neutral-900 mt-1">
               {storesCount}
             </p>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-neutral-900 rounded-2xl p-5 shadow-md text-white">
-            <p className="text-sm text-neutral-400">Top tienda</p>
-            <p className="text-xl font-black mt-2">
-              {topStore?.store || "Sin datos"}
+          <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-neutral-200">
+            <p className="text-xs uppercase tracking-wide text-neutral-400">
+              Ticket promedio
             </p>
-            <p className="text-red-400 font-bold mt-1">
-              {topStore ? money(topStore.total) : "$0"}
+            <p className="text-xl font-black text-neutral-900 mt-1">
+              {money(averageTicket)}
             </p>
-          </div>
-
-          <div className="bg-neutral-900 rounded-2xl p-5 shadow-md text-white">
-            <p className="text-sm text-neutral-400">Top promotor</p>
-            <p className="text-xl font-black mt-2">
-              {topPromoter?.name || "Sin datos"}
-            </p>
-            <p className="text-red-400 font-bold mt-1">
-              {topPromoter ? money(topPromoter.total) : "$0"}
-            </p>
-          </div>
-
-          <div className="bg-neutral-900 rounded-2xl p-5 shadow-md text-white">
-            <p className="text-sm text-neutral-400">Ticket promedio</p>
-            <p className="text-xl font-black mt-2">{money(averageTicket)}</p>
           </div>
         </div>
 
@@ -391,132 +480,118 @@ export default function AdminSalesPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-8">
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <h2 className="text-2xl font-bold text-neutral-800 mb-5">
-              Ranking por tienda
-            </h2>
-
-            <div className="space-y-3">
-              {storeRanking.slice(0, 15).map((store, index) => (
-                <button
-                  key={store.key}
-                  onClick={() =>
-                    setExpandedStore(
-                      expandedStore === store.key ? null : store.key
-                    )
-                  }
-                  className="w-full border rounded-xl p-4 text-left hover:bg-neutral-50 transition"
-                >
-                  <div className="flex justify-between gap-4">
-                    <div>
-                      <p className="font-bold text-neutral-800">
-                        #{index + 1} {store.store}
-                      </p>
-                      <p className="text-sm text-neutral-500">
-                        {store.chain} · {store.brand}
-                      </p>
-                      <p className="text-xs text-neutral-400 mt-1">
-                        {store.promoters.size} promotor(es) · {store.tickets}{" "}
-                        ticket(s)
-                      </p>
-                    </div>
-
-                    <p className="font-black text-red-500">
-                      {money(store.total)}
-                    </p>
-                  </div>
-                </button>
-              ))}
+        <div className="bg-white rounded-2xl shadow-md overflow-hidden mb-8">
+          <div className="px-6 py-5 border-b border-neutral-200 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-neutral-900">
+                Ventas por tienda
+              </h2>
+              <p className="text-sm text-neutral-500 mt-1">
+                Todas las tiendas de la cuenta, agrupadas por cadena.
+              </p>
             </div>
+
+            <p className="text-sm font-semibold text-neutral-500">
+              {storeRanking.length} tienda(s)
+            </p>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <h2 className="text-2xl font-bold text-neutral-800 mb-5">
-              Ranking por promotor
-            </h2>
-
-            <div className="space-y-3">
-              {promoterRanking.slice(0, 15).map((promoter, index) => (
-                <div key={promoter.key} className="border rounded-xl p-4">
-                  <div className="flex justify-between gap-4">
-                    <div>
-                      <p className="font-bold text-neutral-800">
-                        #{index + 1} {promoter.name}
-                      </p>
-                      <p className="text-sm text-neutral-500">
-                        {promoter.email}
-                      </p>
-                      <p className="text-xs text-neutral-400 mt-1">
-                        {promoter.stores.size} tienda(s) · {promoter.tickets}{" "}
-                        ticket(s)
-                      </p>
-                    </div>
-
-                    <p className="font-black text-red-500">
-                      {money(promoter.total)}
-                    </p>
-                  </div>
-                </div>
-              ))}
+          {storeRanking.length === 0 && !loading ? (
+            <div className="p-8 text-center text-neutral-500">
+              No hay tiendas registradas para esta cuenta.
             </div>
-          </div>
-        </div>
+          ) : (
+            <div className="divide-y divide-neutral-200">
+              {storeRanking.map((store, index) => {
+                const isExpanded = expandedStore === store.key;
 
-        {expandedStore && (
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <h2 className="text-2xl font-bold text-neutral-800 mb-5">
-              Detalle de tickets
-            </h2>
+                return (
+                  <div key={store.key}>
+                    <button
+                      onClick={() => {
+                        if (store.tickets > 0) {
+                          setExpandedStore(isExpanded ? null : store.key);
+                        }
+                      }}
+                      className={`w-full px-6 py-4 text-left transition ${
+                        store.tickets > 0
+                          ? "hover:bg-neutral-50 cursor-pointer"
+                          : "cursor-default"
+                      }`}
+                    >
+                      <div className="grid grid-cols-[44px_minmax(0,1fr)_90px_150px_28px] items-center gap-4">
+                        <p className="text-sm font-bold text-neutral-400">
+                          #{index + 1}
+                        </p>
 
-            {storeRanking
-              .filter((store) => store.key === expandedStore)
-              .map((store) => (
-                <div key={store.key}>
-                  <div className="bg-neutral-900 text-white rounded-2xl p-5 mb-5">
-                    <h3 className="text-xl font-bold">{store.store}</h3>
-                    <p className="text-sm text-neutral-300">
-                      {store.chain} · {store.brand}
-                    </p>
-                    <p className="text-red-400 font-black mt-2">
-                      {money(store.total)} · {store.tickets} ticket(s)
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    {store.sales.map((sale) => (
-                      <div
-                        key={sale.id}
-                        className="border rounded-xl p-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2"
-                      >
-                        <div>
-                          <p className="font-bold text-neutral-800">
-                            Ticket: {sale.ticket_number}
-                          </p>
-                          <p className="text-sm text-neutral-500">
-                            {sale.profiles?.name || "Sin promotor"}
+                        <div className="min-w-0">
+                          <p className="font-bold text-neutral-900 truncate">
+                            {store.store}
                           </p>
                           <p className="text-xs text-neutral-400 mt-1">
-                            SKU: {sale.sku || "N/A"} · Modelo:{" "}
-                            {sale.model || "N/A"}
+                            {store.chain} · {store.brand}
                           </p>
                         </div>
 
-                        <div className="xl:text-right">
-                          <p className="font-black text-red-500">
-                            {money(Number(sale.amount))}
-                          </p>
-                          <p className="text-xs text-neutral-400">
-                            {sale.sale_date}
+                        <div className="text-right">
+                          <p className="text-xs text-neutral-400">Tickets</p>
+                          <p className="font-bold text-neutral-800">
+                            {store.tickets}
                           </p>
                         </div>
+
+                        <p className="font-black text-red-500 text-right">
+                          {money(store.total)}
+                        </p>
+
+                        <p className="text-neutral-400 text-right">
+                          {store.tickets > 0 ? (isExpanded ? "−" : "+") : ""}
+                        </p>
                       </div>
-                    ))}
+                    </button>
+
+                    {isExpanded && (
+                      <div className="bg-neutral-50 border-t border-neutral-200 px-6 py-4">
+                        <div className="space-y-2">
+                          {store.sales.map((sale) => (
+                            <div
+                              key={sale.id}
+                              className="bg-white border border-neutral-200 rounded-xl px-4 py-3 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_180px_140px] gap-3 xl:items-center"
+                            >
+                              <div>
+                                <p className="font-semibold text-neutral-800">
+                                  Ticket: {sale.ticket_number}
+                                </p>
+                                <p className="text-sm text-neutral-500 mt-1">
+                                  {sale.profiles?.name || "Sin promotor"}
+                                </p>
+                                <p className="text-xs text-neutral-400 mt-1">
+                                  SKU: {sale.sku || "N/A"} · Modelo:{" "}
+                                  {sale.model || "N/A"}
+                                </p>
+                              </div>
+
+                              <p className="text-sm text-neutral-500 xl:text-right">
+                                {sale.sale_date}
+                              </p>
+
+                              <p className="font-black text-red-500 xl:text-right">
+                                {money(Number(sale.amount))}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+
+
       </section>
     </main>
   );

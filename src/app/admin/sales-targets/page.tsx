@@ -48,6 +48,7 @@ export default function SalesTargetsPage() {
 
   const [promoters, setPromoters] = useState<Promoter[]>([]);
   const [targets, setTargets] = useState<SalesTarget[]>([]);
+  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
 
   const [employeeId, setEmployeeId] = useState("");
   const [month, setMonth] = useState(today.getMonth() + 1);
@@ -70,15 +71,56 @@ export default function SalesTargetsPage() {
     });
 
   const loadPromoters = async () => {
+    if (activeAccountId === "all") {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, name, email")
+        .eq("role", "PROMOTOR")
+        .eq("active", true)
+        .order("name");
+
+      if (error) {
+        console.error("Error cargando promotores:", error);
+        setPromoters([]);
+        return;
+      }
+
+      setPromoters(data || []);
+      return;
+    }
+
+    const { data: accountEmployees, error: accountError } = await supabase
+      .from("account_employees")
+      .select("employee_id")
+      .eq("account_id", activeAccountId)
+      .eq("active", true);
+
+    if (accountError) {
+      console.error("Error cargando empleados de la cuenta:", accountError);
+      setPromoters([]);
+      return;
+    }
+
+    const employeeIds = (accountEmployees || []).map(
+      (item: { employee_id: string }) => item.employee_id
+    );
+
+    if (employeeIds.length === 0) {
+      setPromoters([]);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("profiles")
       .select("id, name, email")
+      .in("id", employeeIds)
       .eq("role", "PROMOTOR")
       .eq("active", true)
       .order("name");
 
     if (error) {
       console.error("Error cargando promotores:", error);
+      setPromoters([]);
       return;
     }
 
@@ -88,12 +130,46 @@ export default function SalesTargetsPage() {
   const loadTargets = async () => {
     setLoading(true);
 
-    const { data, error } = await supabase
+    let employeeIds: string[] | null = null;
+
+    if (activeAccountId !== "all") {
+      const { data: accountEmployees, error: accountError } = await supabase
+        .from("account_employees")
+        .select("employee_id")
+        .eq("account_id", activeAccountId)
+        .eq("active", true);
+
+      if (accountError) {
+        console.error("Error cargando empleados de la cuenta:", accountError);
+        setTargets([]);
+        setLoading(false);
+        return;
+      }
+
+      employeeIds = (accountEmployees || []).map(
+        (item: { employee_id: string }) => item.employee_id
+      );
+
+      if (employeeIds.length === 0) {
+        setTargets([]);
+        setLoading(false);
+        return;
+      }
+    }
+
+    let query = supabase
       .from("sales_targets")
       .select("id, employee_id, year, month, target_amount")
       .eq("year", year)
-      .eq("month", month)
-      .order("target_amount", { ascending: false });
+      .eq("month", month);
+
+    if (employeeIds) {
+      query = query.in("employee_id", employeeIds);
+    }
+
+    const { data, error } = await query.order("target_amount", {
+      ascending: false,
+    });
 
     if (error) {
       console.error("Error cargando metas:", error);
@@ -107,7 +183,7 @@ export default function SalesTargetsPage() {
   };
 
   const loadPromoterStores = async (promoterId: string) => {
-    if (!promoterId) {
+    if (!promoterId || !activeAccountId) {
       setAssignedStores([]);
       setStoreTargets({});
       return;
@@ -115,7 +191,35 @@ export default function SalesTargetsPage() {
 
     setStoresLoading(true);
 
-    const { data, error } = await supabase
+    let allowedStoreIds: string[] | null = null;
+
+    if (activeAccountId !== "all") {
+      const { data: accountStores, error: accountStoresError } = await supabase
+        .from("account_stores")
+        .select("store_id")
+        .eq("account_id", activeAccountId);
+
+      if (accountStoresError) {
+        console.error("Error cargando tiendas de la cuenta:", accountStoresError);
+        setAssignedStores([]);
+        setStoreTargets({});
+        setStoresLoading(false);
+        return;
+      }
+
+      allowedStoreIds = (accountStores || []).map(
+        (item: { store_id: string }) => item.store_id
+      );
+
+      if (allowedStoreIds.length === 0) {
+        setAssignedStores([]);
+        setStoreTargets({});
+        setStoresLoading(false);
+        return;
+      }
+    }
+
+    let assignmentQuery = supabase
       .from("employee_store_assignments")
       .select(`
         store_id,
@@ -126,6 +230,12 @@ export default function SalesTargetsPage() {
       `)
       .eq("employee_id", promoterId)
       .eq("active", true);
+
+    if (allowedStoreIds) {
+      assignmentQuery = assignmentQuery.in("store_id", allowedStoreIds);
+    }
+
+    const { data, error } = await assignmentQuery;
 
     if (error) {
       console.error("Error cargando tiendas:", error);
@@ -157,12 +267,21 @@ export default function SalesTargetsPage() {
 
     setAssignedStores(uniqueStores);
 
+    if (uniqueStores.length === 0) {
+      setStoreTargets({});
+      setStoresLoading(false);
+      return;
+    }
+
+    const visibleStoreIds = uniqueStores.map((store) => store.store_id);
+
     const { data: storeTargetData, error: storeTargetError } = await supabase
       .from("sales_store_targets")
       .select("store_id, target_amount")
       .eq("employee_id", promoterId)
       .eq("year", year)
-      .eq("month", month);
+      .eq("month", month)
+      .in("store_id", visibleStoreIds);
 
     if (storeTargetError) {
       console.error("Error cargando metas por tienda:", storeTargetError);
@@ -182,12 +301,35 @@ export default function SalesTargetsPage() {
   };
 
   useEffect(() => {
-    loadPromoters();
+    const savedAccount =
+      localStorage.getItem("edva_active_account") || "all";
+
+    setActiveAccountId(savedAccount);
+
+    const handleAccountChange = (event: Event) => {
+      const customEvent = event as CustomEvent<string>;
+
+      setActiveAccountId(customEvent.detail);
+      setEmployeeId("");
+      setTargetAmount("");
+      setAssignedStores([]);
+      setStoreTargets({});
+      setMessage("");
+    };
+
+    window.addEventListener("edva-account-change", handleAccountChange);
+
+    return () => {
+      window.removeEventListener("edva-account-change", handleAccountChange);
+    };
   }, []);
 
   useEffect(() => {
+    if (!activeAccountId) return;
+
+    loadPromoters();
     loadTargets();
-  }, [month, year]);
+  }, [activeAccountId, month, year]);
 
   useEffect(() => {
     if (employeeId) {
@@ -196,7 +338,7 @@ export default function SalesTargetsPage() {
       setAssignedStores([]);
       setStoreTargets({});
     }
-  }, [employeeId, month, year]);
+  }, [employeeId, month, year, activeAccountId]);
 
   const promoterMap = useMemo(() => {
     const map = new Map<string, Promoter>();

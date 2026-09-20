@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import AccountSelector from "@/components/AccountSelector";
 
 type SidebarProps = {
   userName?: string;
@@ -30,10 +31,10 @@ export default function Sidebar({
       <div className="mb-8">
         <p className="text-sm text-neutral-400">Bienvenido</p>
 
-        <h2 className="font-semibold text-lg">
-          {userName}
-        </h2>
+        <h2 className="font-semibold text-lg">{userName}</h2>
       </div>
+
+      <AccountSelector />
 
       <nav className="flex flex-col gap-3 flex-1">
         <Link
@@ -62,18 +63,20 @@ export default function Sidebar({
           className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
         >
           Ventas
-        </Link><Link
-  href="/admin/sales-targets"
-  className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
->
-  Metas de venta
-</Link>
+        </Link>
+
+        <Link
+          href="/admin/sales-targets"
+          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+        >
+          Metas de venta
+        </Link>
 
         <Link
           href="/admin/intelligence/sears"
           className="bg-blue-900 hover:bg-blue-800 transition px-4 py-3 rounded-xl font-medium"
         >
-           Inteligencia Sears
+          Inteligencia Sears
         </Link>
 
         <Link
