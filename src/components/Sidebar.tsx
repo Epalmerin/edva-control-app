@@ -6,15 +6,20 @@ import AccountSelector from "@/components/AccountSelector";
 
 type SidebarProps = {
   userName?: string;
+  role?: "ADMIN" | "RH";
 };
 
 export default function Sidebar({
   userName = "Administrador",
+  role = "ADMIN",
 }: SidebarProps) {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = "/";
   };
+
+  const isAdmin = role === "ADMIN";
+  const isRH = role === "RH";
 
   return (
     <aside className="w-72 min-h-screen bg-neutral-900 text-white p-6 flex flex-col">
@@ -30,96 +35,123 @@ export default function Sidebar({
 
       <div className="mb-8">
         <p className="text-sm text-neutral-400">Bienvenido</p>
-
         <h2 className="font-semibold text-lg">{userName}</h2>
+
+        {isRH && (
+          <p className="text-xs text-neutral-400 mt-1">
+            Recursos Humanos
+          </p>
+        )}
       </div>
 
-      <AccountSelector />
+      {isAdmin && <AccountSelector />}
 
       <nav className="flex flex-col gap-3 flex-1">
-        <Link
-          href="/admin"
-          className="bg-red-500 hover:bg-red-600 transition px-4 py-3 rounded-xl font-medium"
-        >
-          Dashboard
-        </Link>
+        {isAdmin && (
+          <>
+            <Link
+              href="/admin"
+              className="bg-red-500 hover:bg-red-600 transition px-4 py-3 rounded-xl font-medium"
+            >
+              Dashboard
+            </Link>
 
-        <Link
-          href="/admin/attendance"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Asistencia
-        </Link>
+            <Link
+              href="/admin/attendance"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Asistencia
+            </Link>
 
-        <Link
-          href="/admin/store-visits"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Rutas de tienda
-        </Link>
+            <Link
+              href="/admin/store-visits"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Rutas de tienda
+            </Link>
 
-        <Link
-          href="/admin/sales"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Ventas
-        </Link>
+            <Link
+              href="/admin/sales"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Ventas
+            </Link>
 
-        <Link
-          href="/admin/sales-targets"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Metas de venta
-        </Link>
+            <Link
+              href="/admin/sales-targets"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Metas de venta
+            </Link>
 
-        <Link
-          href="/admin/intelligence/sears"
-          className="bg-blue-900 hover:bg-blue-800 transition px-4 py-3 rounded-xl font-medium"
-        >
-          Inteligencia Sears
-        </Link>
+            <Link
+              href="/admin/intelligence/sears"
+              className="bg-blue-900 hover:bg-blue-800 transition px-4 py-3 rounded-xl font-medium"
+            >
+              Inteligencia Sears
+            </Link>
 
-        <Link
-          href="/admin/incidences"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Incidencias
-        </Link>
+            <Link
+              href="/admin/incidences"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Incidencias
+            </Link>
 
-        <Link
-          href="/admin/reports"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Reportes
-        </Link>
+            <Link
+              href="/admin/reports"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Reportes
+            </Link>
 
-        <Link
-          href="/admin/employees"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Empleados
-        </Link>
+            <Link
+              href="/admin/employees"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Empleados
+            </Link>
 
-        <Link
-          href="/admin/stores"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Tiendas
-        </Link>
+            <Link
+              href="/admin/stores"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Tiendas
+            </Link>
 
-        <Link
-          href="/admin/store-assignments"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Asignar tiendas
-        </Link>
+            <Link
+              href="/admin/store-assignments"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Asignar tiendas
+            </Link>
 
-        <Link
-          href="/admin/supervisor-visits"
-          className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
-        >
-          Visitas supervisor
-        </Link>
+            <Link
+              href="/admin/supervisor-visits"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Visitas supervisor
+            </Link>
+          </>
+        )}
+
+        {isRH && (
+          <>
+            <Link
+              href="/rh"
+              className="bg-red-500 hover:bg-red-600 transition px-4 py-3 rounded-xl font-medium"
+            >
+              Asistencia
+            </Link>
+
+            <Link
+              href="/rh/incidences"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Incidencias
+            </Link>
+          </>
+        )}
       </nav>
 
       <button

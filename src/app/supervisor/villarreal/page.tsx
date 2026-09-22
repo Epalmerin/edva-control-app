@@ -565,12 +565,23 @@ export default function SupervisorVillarrealPage() {
           </p>
         </div>
 
-        <button
-          onClick={loadData}
-          className="bg-neutral-900 hover:bg-neutral-800 text-white px-5 py-3 rounded-xl font-semibold"
-        >
-          Actualizar
-        </button>
+        <div className="flex flex-wrap gap-3">
+  <button
+    onClick={() => {
+      window.location.href = "/supervisor/incidences";
+    }}
+    className="bg-red-500 hover:bg-red-600 text-white px-5 py-3 rounded-xl font-semibold"
+  >
+    Incidencias
+  </button>
+
+  <button
+    onClick={loadData}
+    className="bg-neutral-900 hover:bg-neutral-800 text-white px-5 py-3 rounded-xl font-semibold"
+  >
+    Actualizar
+  </button>
+</div>
       </div>
 
       {message && (
