@@ -94,7 +94,12 @@ function finalStatus(incidence: Incidence) {
 export default function RhIncidencesPage() {
   const [incidences, setIncidences] = useState<Incidence[]>([]);
   const [reviewers, setReviewers] = useState<Record<string, string>>({});
+const [accounts, setAccounts] = useState<
+    { id: string; name: string }[]
+  >([]);
 
+  const [selectedAccount, setSelectedAccount] = useState("ALL");
+  const [accountEmployeeIds, setAccountEmployeeIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
@@ -103,6 +108,41 @@ export default function RhIncidencesPage() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, string>>({});
+  const loadAccounts = async () => {
+    const { data, error } = await supabase
+      .from("accounts")
+      .select("id, name")
+      .eq("active", true)
+      .order("name", { ascending: true });
+
+    if (error) {
+      console.error("Error al cargar cuentas:", error);
+      return;
+    }
+
+    setAccounts(data || []);
+  };
+
+  const loadAccountEmployees = async (accountId: string) => {
+    if (accountId === "ALL") {
+      setAccountEmployeeIds([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("account_employees")
+      .select("employee_id")
+      .eq("account_id", accountId)
+      .eq("active", true);
+
+    if (error) {
+      console.error("Error al cargar empleados de la cuenta:", error);
+      setAccountEmployeeIds([]);
+      return;
+    }
+
+    setAccountEmployeeIds((data || []).map((item) => item.employee_id));
+  };
 
   const loadIncidences = async () => {
     setLoading(true);
@@ -211,8 +251,23 @@ export default function RhIncidencesPage() {
   };
 
   useEffect(() => {
+    loadAccounts();
     loadIncidences();
   }, []);
+
+  useEffect(() => {
+    loadAccountEmployees(selectedAccount);
+  }, [selectedAccount]);
+
+  const accountIncidences = useMemo(() => {
+    if (selectedAccount === "ALL") {
+      return incidences;
+    }
+
+    return incidences.filter((item) =>
+      accountEmployeeIds.includes(item.employee_id)
+    );
+  }, [incidences, selectedAccount, accountEmployeeIds]);
 
   /*
    * CONTADORES
@@ -220,29 +275,29 @@ export default function RhIncidencesPage() {
 
   const counts = useMemo(() => {
     return {
-      total: incidences.length,
+      total: accountIncidences.length,
 
-      supervisorPending: incidences.filter(
+      supervisorPending: accountIncidences.filter(
         (item) =>
           finalStatus(item) === "SUPERVISOR_PENDING"
       ).length,
 
-      rhPending: incidences.filter(
+      rhPending: accountIncidences.filter(
         (item) =>
           finalStatus(item) === "RH_PENDING"
       ).length,
 
-      approved: incidences.filter(
+      approved: accountIncidences.filter(
         (item) =>
           finalStatus(item) === "APPROVED"
       ).length,
 
-      rejected: incidences.filter(
+      rejected: accountIncidences.filter(
         (item) =>
           finalStatus(item) === "REJECTED"
       ).length,
     };
-  }, [incidences]);
+  }, [accountIncidences]);
 
   /*
    * FILTRO
@@ -250,13 +305,13 @@ export default function RhIncidencesPage() {
 
   const filteredIncidences = useMemo(() => {
     if (filter === "ALL") {
-      return incidences;
+      return accountIncidences;
     }
 
-    return incidences.filter(
+    return accountIncidences.filter(
       (item) => finalStatus(item) === filter
     );
-  }, [incidences, filter]);
+  }, [accountIncidences, filter]);
 
   /*
    * AUTORIZACIÓN RH
@@ -439,7 +494,7 @@ export default function RhIncidencesPage() {
 
   return (
     <main className="min-h-screen bg-neutral-100 flex">
-      <Sidebar userName="Recursos Humanos" />
+      <Sidebar userName="Recursos Humanos" role="RH" />
 
       <section className="flex-1 min-w-0 px-6 py-6 xl:px-8">
 
@@ -461,7 +516,19 @@ export default function RhIncidencesPage() {
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <select
+              value={selectedAccount}
+              onChange={(event) => setSelectedAccount(event.target.value)}
+              className="h-10 min-w-[250px] px-3 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-semibold outline-none focus:border-neutral-500"
+            >
+              <option value="ALL">Todas las cuentas</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
 
             <button
               onClick={() =>
