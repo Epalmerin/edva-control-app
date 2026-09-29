@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 
 type SaleRecord = {
   id: string;
+  employee_id: string | null;
   sale_date: string;
   sku: string | null;
   model: string | null;
@@ -42,6 +43,44 @@ type VisibleStore = {
   brand_name: string | null;
 };
 
+type SalesTarget = {
+  id: string;
+  employee_id: string;
+  account_id: string;
+  target_amount: number | string;
+};
+
+type TargetProfile = { id: string; name: string; email: string };
+
+type SellerSummary = {
+  employeeId: string;
+  name: string;
+  email: string;
+  sales: number;
+  target: number | null;
+  percentage: number | null;
+  remaining: number | null;
+};
+
+// Read every page so a busy month is not limited to the first API response.
+async function readAllRows<T>(
+  fetchPage: (from: number, to: number) => PromiseLike<{
+    data: T[] | null;
+    error: { message: string } | null;
+  }>,
+  isCurrent: () => boolean
+): Promise<T[]> {
+  const rows: T[] = [];
+  while (isCurrent()) {
+    const { data, error } = await fetchPage(rows.length, rows.length + 499);
+    if (error) throw new Error(error.message);
+    if (!isCurrent()) throw new Error("Consulta reemplazada");
+    if (!data?.length) return rows;
+    rows.push(...data);
+  }
+  throw new Error("Consulta reemplazada");
+}
+
 const months = [
   "Enero",
   "Febrero",
@@ -63,6 +102,24 @@ export default function AdminSalesPage() {
   const [message, setMessage] = useState("");
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
   const [visibleStores, setVisibleStores] = useState<VisibleStore[]>([]);
+  const [targets, setTargets] = useState<SalesTarget[]>([]);
+  const [targetProfiles, setTargetProfiles] = useState<TargetProfile[]>([]);
+  const [targetMessage, setTargetMessage] = useState("");
+  const [accountName, setAccountName] = useState("Cuenta seleccionada");
+  const [accountChange, setAccountChange] = useState(0);
+  const requestId = useRef(0);
+
+  const clearResults = useCallback(() => {
+    requestId.current += 1;
+    setLoading(true);
+    setSales([]);
+    setVisibleStores([]);
+    setTargets([]);
+    setTargetProfiles([]);
+    setMessage("");
+    setTargetMessage("");
+    setExpandedStore(null);
+  }, []);
 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -76,188 +133,153 @@ export default function AdminSalesPage() {
       currency: "MXN",
     });
 
-  const loadVisibleStores = async () => {
+  const loadSales = useCallback(async () => {
     if (!activeAccountId) return;
-
-    if (activeAccountId === "all") {
-      const { data, error } = await supabase
-        .from("stores")
-        .select("id, name, chain_name, brand_name")
-        .order("chain_name")
-        .order("name");
-
-      if (error) {
-        console.error("Error cargando tiendas:", error);
-        setVisibleStores([]);
-        return;
-      }
-
-      setVisibleStores(data || []);
-      return;
-    }
-
-    const { data: accountStoreRows, error: accountStoresError } = await supabase
-      .from("account_stores")
-      .select("store_id")
-      .eq("account_id", activeAccountId);
-
-    if (accountStoresError) {
-      console.error("Error cargando tiendas de la cuenta:", accountStoresError);
-      setVisibleStores([]);
-      return;
-    }
-
-    const storeIds = (accountStoreRows || []).map(
-      (item: { store_id: string }) => item.store_id
-    );
-
-    if (storeIds.length === 0) {
-      setVisibleStores([]);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("stores")
-      .select("id, name, chain_name, brand_name")
-      .in("id", storeIds)
-      .order("name");
-
-    if (error) {
-      console.error("Error cargando tiendas:", error);
-      setVisibleStores([]);
-      return;
-    }
-
-    setVisibleStores(data || []);
-  };
-
-  const loadSales = async () => {
-    if (!activeAccountId) return;
-
-    setLoading(true);
-    setMessage("");
-
-    const startDate = `${selectedYear}-${String(selectedMonth).padStart(
-      2,
-      "0"
-    )}-01`;
-
+    clearResults();
+    const currentRequest = requestId.current;
+    const isCurrent = () => currentRequest === requestId.current;
+    const specificAccount = activeAccountId !== "all";
+    const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`;
     const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
+    const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
-    const endDate = `${selectedYear}-${String(selectedMonth).padStart(
-      2,
-      "0"
-    )}-${String(lastDay).padStart(2, "0")}`;
-
-    let allowedStoreIds: string[] | null = null;
-
-    if (activeAccountId !== "all") {
-      const { data: accountStores, error: accountStoresError } = await supabase
-        .from("account_stores")
-        .select("store_id")
-        .eq("account_id", activeAccountId);
-
-      if (accountStoresError) {
-        setSales([]);
-        setMessage(
-          `Error al cargar las tiendas de la cuenta: ${accountStoresError.message}`
-        );
-        setLoading(false);
-        return;
+    // Targets belong to the account and period, independently of current membership.
+    const loadTargets = async () => {
+      if (!specificAccount) return { rows: [] as SalesTarget[], people: [] as TargetProfile[], error: "" };
+      try {
+        const rows = await readAllRows<SalesTarget>((from, to) =>
+          supabase.from("sales_targets")
+            .select("id, employee_id, account_id, target_amount")
+            .eq("account_id", activeAccountId)
+            .eq("year", selectedYear).eq("month", selectedMonth)
+            .order("id").range(from, to), isCurrent);
+        const ids = Array.from(new Set(rows.map((row) => row.employee_id)));
+        const people: TargetProfile[] = [];
+        for (let offset = 0; offset < ids.length; offset += 100) {
+          const batch = ids.slice(offset, offset + 100);
+          people.push(...await readAllRows<TargetProfile>((from, to) =>
+            supabase.from("profiles").select("id, name, email")
+              .in("id", batch).order("id").range(from, to), isCurrent));
+        }
+        return { rows, people, error: "" };
+      } catch (error: unknown) {
+        return { rows: [] as SalesTarget[], people: [] as TargetProfile[],
+          error: `No fue posible cargar las metas: ${error instanceof Error ? error.message : "Error desconocido"}` };
       }
+    };
 
-      allowedStoreIds = (accountStores || []).map(
-        (item: { store_id: string }) => item.store_id
-      );
-
-      if (allowedStoreIds.length === 0) {
-        setSales([]);
-        setLoading(false);
-        return;
+    try {
+      let allowedStoreIds: string[] | null = null;
+      if (specificAccount) {
+        const accountStores = await readAllRows<{ store_id: string }>((from, to) =>
+          supabase.from("account_stores").select("store_id")
+            .eq("account_id", activeAccountId).order("store_id").range(from, to), isCurrent);
+        allowedStoreIds = Array.from(new Set(accountStores.map((row) => row.store_id)));
       }
+      if (!isCurrent()) return;
+      const storeIds = allowedStoreIds;
+      const noStores = storeIds !== null && storeIds.length === 0;
+
+      const [saleRows, storeRows, targetResult, accountResult] = await Promise.all([
+        noStores ? Promise.resolve([] as SaleRecord[]) : readAllRows<SaleRecord>(async (from, to) => {
+          let query = supabase.from("sales_records").select(`
+            id, employee_id, sale_date, sku, model, ticket_number, amount, created_at, store_id,
+            profiles:employee_id (name, email),
+            stores:store_id (name, chain_name, brand_name)
+          `).gte("sale_date", startDate).lte("sale_date", endDate);
+          if (storeIds) query = query.in("store_id", storeIds);
+          const { data, error } = await query
+            .order("sale_date", { ascending: false })
+            .order("created_at", { ascending: false }).order("id").range(from, to);
+          return { error, data: (data || []).map((sale: any) => ({
+            ...sale,
+            profiles: Array.isArray(sale.profiles) ? sale.profiles[0] || null : sale.profiles,
+            stores: Array.isArray(sale.stores) ? sale.stores[0] || null : sale.stores,
+          })) };
+        }, isCurrent),
+        noStores ? Promise.resolve([] as VisibleStore[]) : readAllRows<VisibleStore>((from, to) => {
+          let query = supabase.from("stores").select("id, name, chain_name, brand_name");
+          if (storeIds) query = query.in("id", storeIds);
+          return query.order("chain_name").order("name").order("id").range(from, to);
+        }, isCurrent),
+        loadTargets(),
+        specificAccount
+          ? supabase.from("accounts").select("name").eq("id", activeAccountId).maybeSingle()
+          : Promise.resolve({ data: { name: "Todas las cuentas" }, error: null }),
+      ]);
+      if (!isCurrent()) return;
+      setSales(saleRows);
+      setVisibleStores(storeRows);
+      setTargets(targetResult.rows);
+      setTargetProfiles(targetResult.people);
+      setTargetMessage(targetResult.error);
+      setAccountName(accountResult.data?.name || "Cuenta seleccionada");
+    } catch (error: unknown) {
+      if (!isCurrent()) return;
+      setMessage(`Error al cargar ventas: ${error instanceof Error ? error.message : "Error desconocido"}`);
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
-
-    let query = supabase
-      .from("sales_records")
-      .select(`
-        id,
-        sale_date,
-        sku,
-        model,
-        ticket_number,
-        amount,
-        created_at,
-        store_id,
-        profiles:employee_id (
-          name,
-          email
-        ),
-        stores:store_id (
-          name,
-          chain_name,
-          brand_name
-        )
-      `)
-      .gte("sale_date", startDate)
-      .lte("sale_date", endDate);
-
-    if (allowedStoreIds) {
-      query = query.in("store_id", allowedStoreIds);
-    }
-
-    const { data, error } = await query
-      .order("sale_date", { ascending: false })
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      setSales([]);
-      setMessage(`Error al cargar ventas: ${error.message}`);
-      setLoading(false);
-      return;
-    }
-
-    setSales(
-      (data || []).map((sale: any) => ({
-        ...sale,
-        profiles: Array.isArray(sale.profiles)
-          ? sale.profiles[0]
-          : sale.profiles,
-        stores: Array.isArray(sale.stores) ? sale.stores[0] : sale.stores,
-      }))
-    );
-
-    setLoading(false);
-  };
+  }, [activeAccountId, selectedMonth, selectedYear, clearResults]);
 
   useEffect(() => {
-    const savedAccount =
-      localStorage.getItem("edva_active_account") || "all";
-
-    setActiveAccountId(savedAccount);
-
+    setActiveAccountId(localStorage.getItem("edva_active_account") || "all");
     const handleAccountChange = (event: Event) => {
-      const customEvent = event as CustomEvent<string>;
-
-      setActiveAccountId(customEvent.detail || "all");
+      clearResults();
+      setAccountName("Cuenta seleccionada");
+      setActiveAccountId((event as CustomEvent<string>).detail || "all");
+      setAccountChange((value) => value + 1);
       setSelectedChain("TODAS");
       setSelectedBrand("TODAS");
-      setExpandedStore(null);
-      setMessage("");
     };
-
     window.addEventListener("edva-account-change", handleAccountChange);
-
     return () => {
       window.removeEventListener("edva-account-change", handleAccountChange);
+      requestId.current += 1;
     };
-  }, []);
+  }, [clearResults]);
 
   useEffect(() => {
-    if (!activeAccountId) return;
+    void loadSales();
+    return () => { requestId.current += 1; };
+  }, [loadSales, accountChange]);
 
-    loadSales();
-    loadVisibleStores();
-  }, [activeAccountId, selectedMonth, selectedYear]);
+  const sellerRanking = useMemo<SellerSummary[]>(() => {
+    if (!activeAccountId || activeAccountId === "all") return [];
+    const map = new Map<string, SellerSummary>();
+    const people = new Map(targetProfiles.map((person) => [person.id, person]));
+    const ensureSeller = (employeeId: string) => {
+      let row = map.get(employeeId);
+      if (!row) {
+        const person = people.get(employeeId);
+        row = { employeeId, name: person?.name || "Sin nombre", email: person?.email || "",
+          sales: 0, target: null, percentage: null, remaining: null };
+        map.set(employeeId, row);
+      }
+      return row;
+    };
+    targets.forEach((target) => {
+      if (target.account_id !== activeAccountId) return;
+      const row = ensureSeller(target.employee_id);
+      row.target = (row.target ?? 0) + Number(target.target_amount);
+    });
+    // Use the full account month: a chain/brand subset has no allocated employee target.
+    sales.forEach((sale) => {
+      if (!sale.employee_id) return;
+      const row = ensureSeller(sale.employee_id);
+      row.sales += Number(sale.amount || 0);
+      if (sale.profiles?.name) row.name = sale.profiles.name;
+      if (sale.profiles?.email) row.email = sale.profiles.email;
+    });
+    return Array.from(map.values()).map((row) => ({
+      ...row,
+      percentage: row.target !== null && row.target > 0 ? row.sales / row.target * 100 : null,
+      remaining: row.target !== null && row.target > 0 ? Math.max(row.target - row.sales, 0) : null,
+    })).sort((a, b) => (b.percentage ?? -Infinity) - (a.percentage ?? -Infinity)
+      || b.sales - a.sales || a.name.localeCompare(b.name, "es"));
+  }, [activeAccountId, sales, targets, targetProfiles]);
+
+  const salesWithoutSeller = sales.filter((sale) => !sale.employee_id).length;
 
   const chains = useMemo(() => {
     return Array.from(
@@ -362,7 +384,7 @@ export default function AdminSalesPage() {
     <main className="min-h-screen bg-neutral-100 flex">
       <Sidebar userName="Eduardo Palmerin" />
 
-      <section className="flex-1 p-6 xl:p-8">
+      <section className="flex-1 min-w-0 p-6 xl:p-8">
         <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-4xl font-bold text-neutral-800">
@@ -403,7 +425,7 @@ export default function AdminSalesPage() {
 
             <select
               value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
+              onChange={(e) => { clearResults(); setSelectedMonth(Number(e.target.value)); }}
               className="px-4 py-3 rounded-xl border bg-white"
             >
               {months.map((month, index) => (
@@ -415,7 +437,7 @@ export default function AdminSalesPage() {
 
             <select
               value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              onChange={(e) => { clearResults(); setSelectedYear(Number(e.target.value)); }}
               className="px-4 py-3 rounded-xl border bg-white"
             >
               {[2025, 2026, 2027].map((year) => (
@@ -425,7 +447,8 @@ export default function AdminSalesPage() {
 
             <button
               onClick={loadSales}
-              className="bg-neutral-900 hover:bg-neutral-800 text-white px-5 py-3 rounded-xl font-semibold"
+              disabled={loading || !activeAccountId}
+              className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white px-5 py-3 rounded-xl font-semibold"
             >
               Actualizar
             </button>
@@ -438,7 +461,7 @@ export default function AdminSalesPage() {
               Venta mensual
             </p>
             <p className="text-xl font-black text-red-500 mt-1">
-              {money(totalSales)}
+              {loading ? "..." : message ? "—" : money(totalSales)}
             </p>
           </div>
 
@@ -446,7 +469,7 @@ export default function AdminSalesPage() {
             <p className="text-xs uppercase tracking-wide text-neutral-400">
               Tickets
             </p>
-            <p className="text-xl font-black text-neutral-900 mt-1">{tickets}</p>
+            <p className="text-xl font-black text-neutral-900 mt-1">{loading ? "..." : message ? "—" : tickets}</p>
           </div>
 
           <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-neutral-200">
@@ -454,7 +477,7 @@ export default function AdminSalesPage() {
               Tiendas
             </p>
             <p className="text-xl font-black text-neutral-900 mt-1">
-              {storesCount}
+              {loading ? "..." : message ? "—" : storesCount}
             </p>
           </div>
 
@@ -463,7 +486,7 @@ export default function AdminSalesPage() {
               Ticket promedio
             </p>
             <p className="text-xl font-black text-neutral-900 mt-1">
-              {money(averageTicket)}
+              {loading ? "..." : message ? "—" : money(averageTicket)}
             </p>
           </div>
         </div>
@@ -481,6 +504,98 @@ export default function AdminSalesPage() {
         )}
 
         <div className="bg-white rounded-2xl shadow-md overflow-hidden mb-8">
+          <div className="px-6 py-5 border-b border-neutral-200">
+            <h2 className="text-xl font-bold text-neutral-900">Cumplimiento por vendedor</h2>
+            <p className="text-sm text-neutral-500 mt-1">
+              {months[selectedMonth - 1]} {selectedYear}
+              {activeAccountId && activeAccountId !== "all" ? ` · ${accountName}` : ""}
+            </p>
+            <p className="text-xs text-neutral-500 mt-2">
+              Venta mensual del vendedor ÷ su meta mensual × 100. Este resumen considera toda
+              la cuenta; los filtros de cadena y marca aplican al concentrado de ventas.
+            </p>
+          </div>
+          {loading ? (
+            <p className="p-6 text-sm text-neutral-500">Cargando cumplimiento...</p>
+          ) : message ? (
+            <p className="p-6 text-sm text-neutral-500">Cumplimiento no disponible. Vuelve a intentar con Actualizar.</p>
+          ) : activeAccountId === "all" ? (
+            <p className="p-6 text-sm text-neutral-600">
+              Selecciona una cuenta específica en el menú lateral para consultar las metas
+              y el cumplimiento de cada vendedor.
+            </p>
+          ) : targetMessage ? (
+            <p role="alert" className="p-6 text-sm text-red-600">{targetMessage} Usa Actualizar para reintentar.</p>
+          ) : (
+            <>
+              {salesWithoutSeller > 0 && (
+                <p className="px-6 py-3 text-sm text-amber-800 bg-amber-50">
+                  Hay {salesWithoutSeller} registro(s) de venta sin vendedor identificado.
+                  Están incluidos en las ventas por tienda, pero no en este cálculo.
+                </p>
+              )}
+              {sellerRanking.length === 0 ? (
+                <p className="p-8 text-center text-neutral-500">No hay ventas ni metas por vendedor para esta cuenta y periodo.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left">Vendedor</th>
+                        <th scope="col" className="px-4 py-3 text-right whitespace-nowrap">Venta mensual</th>
+                        <th scope="col" className="px-4 py-3 text-right whitespace-nowrap">Meta mensual</th>
+                        <th scope="col" className="px-4 py-3 text-left">Cumplimiento</th>
+                        <th scope="col" className="px-6 py-3 text-right">Faltante</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {sellerRanking.map((seller) => {
+                        const achieved = seller.percentage !== null && seller.percentage >= 100;
+                        return (
+                          <tr key={seller.employeeId} className="hover:bg-neutral-50">
+                            <td className="px-6 py-4 min-w-52">
+                              <p className="font-semibold text-neutral-900">{seller.name}</p>
+                              <p className="text-xs text-neutral-400 mt-1">{seller.email || seller.employeeId}</p>
+                            </td>
+                            <td className="px-4 py-4 text-right font-bold text-neutral-900 whitespace-nowrap">{money(seller.sales)}</td>
+                            <td className="px-4 py-4 text-right whitespace-nowrap">
+                              {seller.target === null ? <span className="text-neutral-400">Sin meta</span> : money(seller.target)}
+                            </td>
+                            <td className="px-4 py-4 min-w-48">
+                              {seller.percentage === null ? (
+                                <span className="text-xs text-neutral-500">{seller.target === null ? "Sin meta asignada" : "Meta no mayor a cero"}</span>
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between gap-3 mb-2">
+                                    <span className={`font-bold ${achieved ? "text-emerald-600" : "text-neutral-800"}`}>
+                                      {seller.percentage.toLocaleString("es-MX", { maximumFractionDigits: 1 })}%
+                                    </span>
+                                    <span className={`text-xs ${achieved ? "text-emerald-600" : "text-neutral-500"}`}>
+                                      {achieved ? "Meta alcanzada" : "En avance"}
+                                    </span>
+                                  </div>
+                                  <div className="h-2 rounded-full bg-neutral-100 overflow-hidden" aria-hidden="true">
+                                    <div className={`h-full rounded-full ${achieved ? "bg-emerald-500" : "bg-red-500"}`}
+                                      style={{ width: `${Math.max(0, Math.min(seller.percentage, 100))}%` }} />
+                                  </div>
+                                </>
+                              )}
+                            </td>
+                            <td className={`px-6 py-4 text-right font-semibold whitespace-nowrap ${achieved ? "text-emerald-600" : "text-neutral-700"}`}>
+                              {seller.remaining === null ? "—" : money(seller.remaining)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-md overflow-hidden mb-8">
           <div className="px-6 py-5 border-b border-neutral-200 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-neutral-900">
@@ -496,7 +611,9 @@ export default function AdminSalesPage() {
             </p>
           </div>
 
-          {storeRanking.length === 0 && !loading ? (
+          {message ? (
+            <div className="p-8 text-center text-neutral-500">Ventas no disponibles.</div>
+          ) : storeRanking.length === 0 && !loading ? (
             <div className="p-8 text-center text-neutral-500">
               No hay tiendas registradas para esta cuenta.
             </div>
