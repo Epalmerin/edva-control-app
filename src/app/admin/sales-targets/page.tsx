@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 
@@ -13,6 +13,7 @@ type Promoter = {
 type SalesTarget = {
   id: string;
   employee_id: string;
+  account_id: string;
   year: number;
   month: number;
   target_amount: number;
@@ -47,6 +48,7 @@ export default function SalesTargetsPage() {
   const today = new Date();
 
   const [promoters, setPromoters] = useState<Promoter[]>([]);
+  const [targetPromoters, setTargetPromoters] = useState<Promoter[]>([]);
   const [targets, setTargets] = useState<SalesTarget[]>([]);
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
 
@@ -64,6 +66,15 @@ export default function SalesTargetsPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
 
+  const canEdit = Boolean(activeAccountId && activeAccountId !== "all");
+  const viewKey = `${activeAccountId}:${year}:${month}`;
+  const currentView = useRef(viewKey);
+  currentView.current = viewKey;
+  const currentStoreView = useRef("");
+  currentStoreView.current = `${viewKey}:${employeeId}`;
+  const [loadedStoreView, setLoadedStoreView] = useState("");
+  const storesReady = loadedStoreView === `${viewKey}:${employeeId}`;
+
   const money = (value: number) =>
     value.toLocaleString("es-MX", {
       style: "currency",
@@ -71,6 +82,8 @@ export default function SalesTargetsPage() {
     });
 
   const loadPromoters = async () => {
+    const isCurrent = () => currentView.current === viewKey;
+    if (!activeAccountId) return;
     if (activeAccountId === "all") {
       const { data, error } = await supabase
         .from("profiles")
@@ -79,6 +92,7 @@ export default function SalesTargetsPage() {
         .eq("active", true)
         .order("name");
 
+      if (!isCurrent()) return;
       if (error) {
         console.error("Error cargando promotores:", error);
         setPromoters([]);
@@ -95,6 +109,7 @@ export default function SalesTargetsPage() {
       .eq("account_id", activeAccountId)
       .eq("active", true);
 
+    if (!isCurrent()) return;
     if (accountError) {
       console.error("Error cargando empleados de la cuenta:", accountError);
       setPromoters([]);
@@ -118,6 +133,7 @@ export default function SalesTargetsPage() {
       .eq("active", true)
       .order("name");
 
+    if (!isCurrent()) return;
     if (error) {
       console.error("Error cargando promotores:", error);
       setPromoters([]);
@@ -128,62 +144,68 @@ export default function SalesTargetsPage() {
   };
 
   const loadTargets = async () => {
+    if (!activeAccountId) return;
+    const isCurrent = () => currentView.current === viewKey;
+    if (!isCurrent()) return;
     setLoading(true);
-
-    let employeeIds: string[] | null = null;
-
-    if (activeAccountId !== "all") {
-      const { data: accountEmployees, error: accountError } = await supabase
-        .from("account_employees")
-        .select("employee_id")
-        .eq("account_id", activeAccountId)
-        .eq("active", true);
-
-      if (accountError) {
-        console.error("Error cargando empleados de la cuenta:", accountError);
-        setTargets([]);
-        setLoading(false);
-        return;
-      }
-
-      employeeIds = (accountEmployees || []).map(
-        (item: { employee_id: string }) => item.employee_id
-      );
-
-      if (employeeIds.length === 0) {
-        setTargets([]);
-        setLoading(false);
-        return;
-      }
-    }
+    setTargetPromoters([]);
 
     let query = supabase
       .from("sales_targets")
-      .select("id, employee_id, year, month, target_amount")
+      .select("id, employee_id, account_id, year, month, target_amount")
       .eq("year", year)
       .eq("month", month);
 
-    if (employeeIds) {
-      query = query.in("employee_id", employeeIds);
+    // La cuenta de la meta conserva la historia aunque el promotor haya salido.
+    if (activeAccountId !== "all") {
+      query = query.eq("account_id", activeAccountId);
     }
 
     const { data, error } = await query.order("target_amount", {
       ascending: false,
     });
+    if (!isCurrent()) return;
 
     if (error) {
       console.error("Error cargando metas:", error);
       setTargets([]);
+      setMessageType("error");
+      setMessage("No fue posible cargar las metas del periodo.");
       setLoading(false);
       return;
     }
 
-    setTargets(data || []);
+    const loadedTargets: SalesTarget[] = data || [];
+    setTargets(loadedTargets);
+    const employeeIds = Array.from(
+      new Set(loadedTargets.map((target) => target.employee_id))
+    );
+
+    if (employeeIds.length > 0) {
+      // Sin filtros de actividad ni rol: también se muestran perfiles históricos.
+      const { data: profiles, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, name, email")
+        .in("id", employeeIds);
+      if (!isCurrent()) return;
+
+      if (profileError) {
+        console.error("Error cargando nombres históricos:", profileError);
+        setMessageType("error");
+        setMessage("Las metas se cargaron, pero no fue posible obtener todos los nombres.");
+      } else {
+        setTargetPromoters(profiles || []);
+      }
+    }
     setLoading(false);
   };
 
   const loadPromoterStores = async (promoterId: string) => {
-    if (!promoterId || !activeAccountId) {
+    const storeView = `${viewKey}:${promoterId}`;
+    const isCurrent = () => currentStoreView.current === storeView;
+    if (!isCurrent()) return;
+    setLoadedStoreView("");
+    if (!promoterId || !canEdit) {
       setAssignedStores([]);
       setStoreTargets({});
       return;
@@ -199,6 +221,7 @@ export default function SalesTargetsPage() {
         .select("store_id")
         .eq("account_id", activeAccountId);
 
+      if (!isCurrent()) return;
       if (accountStoresError) {
         console.error("Error cargando tiendas de la cuenta:", accountStoresError);
         setAssignedStores([]);
@@ -212,6 +235,7 @@ export default function SalesTargetsPage() {
       );
 
       if (allowedStoreIds.length === 0) {
+        setLoadedStoreView(storeView);
         setAssignedStores([]);
         setStoreTargets({});
         setStoresLoading(false);
@@ -237,6 +261,7 @@ export default function SalesTargetsPage() {
 
     const { data, error } = await assignmentQuery;
 
+    if (!isCurrent()) return;
     if (error) {
       console.error("Error cargando tiendas:", error);
       setAssignedStores([]);
@@ -268,6 +293,7 @@ export default function SalesTargetsPage() {
     setAssignedStores(uniqueStores);
 
     if (uniqueStores.length === 0) {
+      setLoadedStoreView(storeView);
       setStoreTargets({});
       setStoresLoading(false);
       return;
@@ -283,6 +309,7 @@ export default function SalesTargetsPage() {
       .eq("month", month)
       .in("store_id", visibleStoreIds);
 
+    if (!isCurrent()) return;
     if (storeTargetError) {
       console.error("Error cargando metas por tienda:", storeTargetError);
       setStoreTargets({});
@@ -296,6 +323,7 @@ export default function SalesTargetsPage() {
       values[item.store_id] = String(item.target_amount);
     });
 
+    setLoadedStoreView(storeView);
     setStoreTargets(values);
     setStoresLoading(false);
   };
@@ -309,7 +337,13 @@ export default function SalesTargetsPage() {
     const handleAccountChange = (event: Event) => {
       const customEvent = event as CustomEvent<string>;
 
-      setActiveAccountId(customEvent.detail);
+      currentView.current = "";
+      currentStoreView.current = "";
+      setActiveAccountId(customEvent.detail || "all");
+      setPromoters([]);
+      setTargets([]);
+      setTargetPromoters([]);
+      setLoadedStoreView("");
       setEmployeeId("");
       setTargetAmount("");
       setAssignedStores([]);
@@ -343,12 +377,12 @@ export default function SalesTargetsPage() {
   const promoterMap = useMemo(() => {
     const map = new Map<string, Promoter>();
 
-    promoters.forEach((promoter) => {
+    [...promoters, ...targetPromoters].forEach((promoter) => {
       map.set(promoter.id, promoter);
     });
 
     return map;
-  }, [promoters]);
+  }, [promoters, targetPromoters]);
 
   const numericTarget = Number(targetAmount.replace(/,/g, "")) || 0;
 
@@ -377,15 +411,37 @@ export default function SalesTargetsPage() {
   const saveTarget = async () => {
     setMessage("");
 
+    if (!canEdit || !activeAccountId) {
+      setMessageType("error");
+      setMessage("Selecciona una cuenta específica para crear o editar metas.");
+      return;
+    }
+    if (saving || loading || storesLoading) return;
+
     if (!employeeId) {
       setMessageType("error");
       setMessage("Selecciona un promotor.");
       return;
     }
 
+    if (!storesReady) {
+      setMessageType("error");
+      setMessage("Espera a que se carguen correctamente las tiendas del promotor.");
+      return;
+    }
+    const existingTarget = targets.find((target) =>
+      target.employee_id === employeeId && target.account_id === activeAccountId &&
+      target.year === year && target.month === month
+    );
+    if (!existingTarget && !promoters.some((promoter) => promoter.id === employeeId)) {
+      setMessageType("error");
+      setMessage("Selecciona un promotor activo de esta cuenta para crear una meta.");
+      return;
+    }
+
     const amount = Number(targetAmount.replace(/,/g, ""));
 
-    if (!amount || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       setMessageType("error");
       setMessage("Ingresa una meta válida.");
       return;
@@ -416,23 +472,52 @@ export default function SalesTargetsPage() {
 
     setSaving(true);
 
-    const { error } = await supabase.from("sales_targets").upsert(
-      {
-        employee_id: employeeId,
-        year,
-        month,
-        target_amount: amount,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: "employee_id,year,month",
-      }
-    );
+    // Se conserva UNIQUE(employee_id, year, month). Nunca reasignar una meta
+    // de otra cuenta mediante un upsert sobre esa restricción.
+    const { data: existing, error: lookupError } = await supabase
+      .from("sales_targets")
+      .select("id, account_id")
+      .eq("employee_id", employeeId)
+      .eq("year", year)
+      .eq("month", month)
+      .maybeSingle();
+
+    if (currentView.current !== viewKey) {
+      setSaving(false);
+      return;
+    }
+    if (lookupError || (existing && existing.account_id !== activeAccountId)) {
+      setMessageType("error");
+      setMessage(lookupError
+        ? "No fue posible comprobar la meta existente. Intenta de nuevo."
+        : "Este promotor ya tiene una meta en otra cuenta para este mes. No se modificó; la restricción actual permite una sola meta por promotor y periodo.");
+      setSaving(false);
+      return;
+    }
+
+    const values = {
+      employee_id: employeeId,
+      account_id: activeAccountId,
+      year,
+      month,
+      target_amount: amount,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = existing
+      ? await supabase.from("sales_targets")
+          .update({ target_amount: amount, updated_at: values.updated_at })
+          .eq("id", existing.id)
+          .eq("account_id", activeAccountId)
+          .select("id")
+          .single()
+      : await supabase.from("sales_targets").insert(values);
 
     if (error) {
       console.error("Error guardando meta:", error);
       setMessageType("error");
-      setMessage("No fue posible guardar la meta.");
+      setMessage(error.code === "23505"
+        ? "Ya existe una meta para este promotor y periodo. Recarga las metas antes de continuar."
+        : "No fue posible guardar la meta.");
       setSaving(false);
       return;
     }
@@ -466,6 +551,10 @@ export default function SalesTargetsPage() {
       }
     }
 
+    if (currentView.current !== viewKey) {
+      setSaving(false);
+      return;
+    }
     setMessageType("success");
     setMessage("Meta guardada correctamente.");
 
@@ -476,6 +565,11 @@ export default function SalesTargetsPage() {
   };
 
   const editTarget = (target: SalesTarget) => {
+    if (!canEdit || target.account_id !== activeAccountId || saving || loading) {
+      setMessageType("error");
+      setMessage("Selecciona la cuenta de esta meta para editarla.");
+      return;
+    }
     setEmployeeId(target.employee_id);
     setTargetAmount(String(target.target_amount));
     setMessage("");
@@ -520,6 +614,13 @@ export default function SalesTargetsPage() {
                 Selecciona el promotor y define su objetivo de venta.
               </p>
 
+              {!canEdit && (
+                <p className="text-sm text-amber-800 bg-amber-50 rounded-xl p-3 mb-5">
+                  Todas las cuentas: solo consulta. Selecciona una cuenta específica
+                  para crear o editar metas.
+                </p>
+              )}
+
               <div className="space-y-5">
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-2">
@@ -527,6 +628,7 @@ export default function SalesTargetsPage() {
                   </label>
 
                   <select
+                    disabled={!canEdit || saving || loading}
                     value={employeeId}
                     onChange={(e) => {
                       setEmployeeId(e.target.value);
@@ -537,6 +639,11 @@ export default function SalesTargetsPage() {
                   >
                     <option value="">Seleccionar promotor</option>
 
+                    {employeeId && !promoters.some((promoter) => promoter.id === employeeId) && (
+                      <option value={employeeId}>
+                        {promoterMap.get(employeeId)?.name || "Promotor histórico"} (meta histórica)
+                      </option>
+                    )}
                     {promoters.map((promoter) => (
                       <option key={promoter.id} value={promoter.id}>
                         {promoter.name}
@@ -552,9 +659,11 @@ export default function SalesTargetsPage() {
                     </label>
 
                     <select
+                      disabled={saving}
                       value={month}
                       onChange={(e) => {
                         setMonth(Number(e.target.value));
+                        setEmployeeId("");
                         setTargetAmount("");
                         setMessage("");
                       }}
@@ -574,9 +683,11 @@ export default function SalesTargetsPage() {
                     </label>
 
                     <select
+                      disabled={saving}
                       value={year}
                       onChange={(e) => {
                         setYear(Number(e.target.value));
+                        setEmployeeId("");
                         setTargetAmount("");
                         setMessage("");
                       }}
@@ -605,6 +716,7 @@ export default function SalesTargetsPage() {
                       type="number"
                       min="0"
                       step="1000"
+                      disabled={!canEdit || saving}
                       value={targetAmount}
                       onChange={(e) => setTargetAmount(e.target.value)}
                       placeholder="300000"
@@ -692,6 +804,7 @@ export default function SalesTargetsPage() {
                                 type="number"
                                 min="0"
                                 step="1000"
+                                disabled={!canEdit || saving}
                                 value={storeTargets[store.store_id] || ""}
                                 onChange={(e) =>
                                   handleStoreTargetChange(
@@ -755,7 +868,7 @@ export default function SalesTargetsPage() {
 
                 <button
                   onClick={saveTarget}
-                  disabled={saving}
+                  disabled={!canEdit || saving || loading || storesLoading || !storesReady}
                   className="w-full bg-neutral-900 hover:bg-neutral-800 disabled:bg-neutral-400 text-white py-3 rounded-xl font-bold transition"
                 >
                   {saving ? "Guardando..." : "Guardar meta"}
@@ -829,6 +942,7 @@ export default function SalesTargetsPage() {
                           </p>
 
                           <button
+                            disabled={!canEdit || saving || loading || target.account_id !== activeAccountId}
                             onClick={() => editTarget(target)}
                             className="border border-neutral-300 hover:bg-neutral-100 px-4 py-2 rounded-lg text-sm font-semibold text-neutral-700"
                           >
