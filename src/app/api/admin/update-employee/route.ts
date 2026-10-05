@@ -6,7 +6,8 @@ type AccountStoreAssignment = {
   storeIds: string[];
 };
 
-type CreateEmployeePayload = {
+type UpdateEmployeePayload = {
+  employeeId?: string;
   name?: string;
   firstName?: string;
   paternalLastName?: string;
@@ -41,7 +42,6 @@ type CreateEmployeePayload = {
   breakStartTime?: string;
   breakEndTime?: string;
   workEndTime?: string;
-  password?: string;
   accountStoreAssignments?: AccountStoreAssignment[];
 };
 
@@ -71,14 +71,12 @@ const allowedMaritalStatuses = new Set([
 ]);
 
 const allowedSexValues = new Set(["FEMALE", "MALE", "OTHER"]);
-
 const allowedContractTypes = new Set([
   "INDEFINITE",
   "FIXED_TERM",
   "TRIAL",
   "TEMPORARY",
 ]);
-
 const allowedPayFrequencies = new Set(["DAILY", "WEEKLY", "BIWEEKLY"]);
 
 const jsonError = (error: string, status: number) =>
@@ -88,32 +86,17 @@ const cleanString = (value: unknown) =>
   typeof value === "string" ? value.trim() : "";
 
 const nullableString = (value: unknown) => cleanString(value) || null;
+const nullableDate = (value: unknown) => nullableString(value);
+const nullableTime = (value: unknown) => nullableString(value);
 
 const normalizedUpper = (value: unknown) => {
   const cleanValue = cleanString(value);
   return cleanValue ? cleanValue.toUpperCase().replace(/\s+/g, "") : null;
 };
 
-const nullableDate = (value: unknown) => nullableString(value);
-
-const nullableTime = (value: unknown) => nullableString(value);
-
 const nullableEnum = (value: unknown, allowedValues: Set<string>) => {
   const cleanValue = cleanString(value);
   return cleanValue && allowedValues.has(cleanValue) ? cleanValue : null;
-};
-
-const nullableSalary = (value: unknown) => {
-  if (value === undefined || value === null || value === "") return null;
-
-  const numericValue =
-    typeof value === "number" ? value : Number(String(value).replace(/,/g, ""));
-
-  if (!Number.isFinite(numericValue) || numericValue < 0) {
-    return Number.NaN;
-  }
-
-  return numericValue;
 };
 
 const nullableNonNegativeNumber = (value: unknown) => {
@@ -137,15 +120,9 @@ export async function POST(request: Request) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
     return jsonError("Configuracion de Supabase incompleta.", 500);
   }
-
-  const supabaseAdmin = serviceRoleKey
-    ? createClient(supabaseUrl, serviceRoleKey)
-    : null;
-  let createdUserId: string | null = null;
-  let profileCreated = false;
 
   try {
     const token = request.headers
@@ -180,29 +157,21 @@ export async function POST(request: Request) {
         .single();
 
     if (callerProfileError || callerProfile?.role !== "ADMIN") {
-      return jsonError("No tienes permisos para crear empleados.", 403);
+      return jsonError("No tienes permisos para actualizar empleados.", 403);
     }
 
     if (callerProfile.active === false) {
       return jsonError("El usuario administrador esta inactivo.", 403);
     }
 
-    const body = (await request.json()) as CreateEmployeePayload;
+    const body = (await request.json()) as UpdateEmployeePayload;
+    const employeeId = cleanString(body.employeeId);
 
-    if (!serviceRoleKey || serviceRoleKey.includes("dummy")) {
-      return jsonError(
-        "Falta configurar la llave privada SUPABASE_SERVICE_ROLE_KEY real para poder crear usuarios.",
-        500
-      );
+    if (!employeeId) {
+      return jsonError("Selecciona un empleado para actualizar.", 400);
     }
 
-    if (!supabaseAdmin) {
-      return jsonError("Configuracion de Supabase incompleta.", 500);
-    }
-
-    const email = cleanString(body.email).toLowerCase();
     const role = cleanString(body.role);
-    const password = cleanString(body.password);
     const firstName = cleanString(body.firstName);
     const paternalLastName = cleanString(body.paternalLastName);
     const maternalLastName = cleanString(body.maternalLastName);
@@ -210,15 +179,15 @@ export async function POST(request: Request) {
       [firstName, paternalLastName, maternalLastName].filter(Boolean).join(" ") ||
       cleanString(body.name);
 
-    if (!fullName || !email || !role || !password) {
-      return jsonError("Faltan datos obligatorios.", 400);
+    if (!fullName || !role) {
+      return jsonError("Faltan nombre y rol del empleado.", 400);
     }
 
     if (!allowedRoles.has(role)) {
       return jsonError("Rol no valido.", 400);
     }
 
-    const salary = nullableSalary(body.salary);
+    const salary = nullableNonNegativeNumber(body.salary);
     const weeklyHours = nullableNonNegativeNumber(body.weeklyHours);
 
     if (Number.isNaN(salary)) {
@@ -246,6 +215,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
     const accountAssignments = body.accountStoreAssignments || [];
     const requestedPairs = accountAssignments.flatMap((assignment) =>
       (assignment.storeIds || []).map((storeId) => ({
@@ -295,70 +265,65 @@ export async function POST(request: Request) {
       }
     }
 
-    const { data: authData, error: authError } =
-      await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-      });
-
-    if (authError || !authData.user) {
-      return jsonError(authError?.message || "No fue posible crear Auth.", 400);
-    }
-
-    createdUserId = authData.user.id;
-
-    const { error: profileError } = await supabaseAdmin.from("profiles").insert({
-      id: createdUserId,
-      name: fullName,
-      first_name: firstName || null,
-      paternal_last_name: paternalLastName || null,
-      maternal_last_name: maternalLastName || null,
-      email,
-      phone: nullableString(body.phone),
-      role,
-      hire_date: nullableDate(body.hireDate),
-      curp: normalizedUpper(body.curp),
-      rfc: normalizedUpper(body.rfc),
-      nss: normalizedUpper(body.nss),
-      birth_date: nullableDate(body.birthDate),
-      birth_place: nullableString(body.birthPlace),
-      nationality: nullableString(body.nationality),
-      sex: nullableEnum(body.sex, allowedSexValues),
-      marital_status: nullableEnum(body.maritalStatus, allowedMaritalStatuses),
-      street: nullableString(body.street),
-      exterior_number: nullableString(body.exteriorNumber),
-      interior_number: nullableString(body.interiorNumber),
-      neighborhood: nullableString(body.neighborhood),
-      postal_code: nullableString(body.postalCode),
-      municipality: nullableString(body.municipality),
-      state: nullableString(body.state),
-      contract_type: nullableEnum(body.contractType, allowedContractTypes),
-      contract_start_date: contractStartDate,
-      contract_end_date: contractEndDate,
-      salary,
-      pay_frequency: nullableEnum(body.payFrequency, allowedPayFrequencies),
-      weekly_hours: weeklyHours,
-      work_days: nullableString(body.workDays),
-      work_start_time: nullableTime(body.workStartTime),
-      break_start_time: nullableTime(body.breakStartTime),
-      break_end_time: nullableTime(body.breakEndTime),
-      work_end_time: nullableTime(body.workEndTime),
-      active: true,
-    });
+    const { error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        name: fullName,
+        first_name: firstName || null,
+        paternal_last_name: paternalLastName || null,
+        maternal_last_name: maternalLastName || null,
+        email: nullableString(body.email),
+        phone: nullableString(body.phone),
+        role,
+        hire_date: nullableDate(body.hireDate),
+        curp: normalizedUpper(body.curp),
+        rfc: normalizedUpper(body.rfc),
+        nss: normalizedUpper(body.nss),
+        birth_date: nullableDate(body.birthDate),
+        birth_place: nullableString(body.birthPlace),
+        nationality: nullableString(body.nationality),
+        sex: nullableEnum(body.sex, allowedSexValues),
+        marital_status: nullableEnum(body.maritalStatus, allowedMaritalStatuses),
+        street: nullableString(body.street),
+        exterior_number: nullableString(body.exteriorNumber),
+        interior_number: nullableString(body.interiorNumber),
+        neighborhood: nullableString(body.neighborhood),
+        postal_code: nullableString(body.postalCode),
+        municipality: nullableString(body.municipality),
+        state: nullableString(body.state),
+        contract_type: nullableEnum(body.contractType, allowedContractTypes),
+        contract_start_date: contractStartDate,
+        contract_end_date: contractEndDate,
+        salary,
+        pay_frequency: nullableEnum(body.payFrequency, allowedPayFrequencies),
+        weekly_hours: weeklyHours,
+        work_days: nullableString(body.workDays),
+        work_start_time: nullableTime(body.workStartTime),
+        break_start_time: nullableTime(body.breakStartTime),
+        break_end_time: nullableTime(body.breakEndTime),
+        work_end_time: nullableTime(body.workEndTime),
+      })
+      .eq("id", employeeId);
 
     if (profileError) {
-      throw new Error(profileError.message);
+      return jsonError(profileError.message, 400);
     }
 
-    profileCreated = true;
+    const { error: deleteAssignmentsError } = await supabaseAdmin
+      .from("employee_store_assignments")
+      .delete()
+      .eq("employee_id", employeeId);
+
+    if (deleteAssignmentsError) {
+      return jsonError(deleteAssignmentsError.message, 400);
+    }
 
     if (role === "PROMOTOR" && storeIds.length > 0) {
       const { error: assignmentError } = await supabaseAdmin
         .from("employee_store_assignments")
         .upsert(
           storeIds.map((storeId) => ({
-            employee_id: createdUserId,
+            employee_id: employeeId,
             store_id: storeId,
             active: true,
           })),
@@ -366,33 +331,20 @@ export async function POST(request: Request) {
         );
 
       if (assignmentError) {
-        throw new Error(assignmentError.message);
+        return jsonError(assignmentError.message, 400);
       }
     }
 
     return NextResponse.json({
       success: true,
-      message: "Empleado creado correctamente.",
+      message: "Expediente actualizado correctamente.",
     });
   } catch (error) {
-    if (createdUserId && supabaseAdmin) {
-      if (profileCreated) {
-        await supabaseAdmin
-          .from("employee_store_assignments")
-          .delete()
-          .eq("employee_id", createdUserId);
-
-        await supabaseAdmin.from("profiles").delete().eq("id", createdUserId);
-      }
-
-      await supabaseAdmin.auth.admin.deleteUser(createdUserId);
-    }
-
-    const message =
+    return jsonError(
       error instanceof Error
         ? error.message
-        : "Error inesperado al crear empleado.";
-
-    return jsonError(message, 400);
+        : "Error inesperado al actualizar empleado.",
+      500
+    );
   }
 }
