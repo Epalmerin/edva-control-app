@@ -19,6 +19,7 @@ type Profile = {
   marital_status: string | null;
   curp: string | null;
   rfc: string | null;
+  fiscal_postal_code: string | null;
   nss: string | null;
   street: string | null;
   exterior_number: string | null;
@@ -30,7 +31,11 @@ type Profile = {
   contract_start_date: string | null;
   contract_end_date: string | null;
   salary: number | string | null;
+  salary_period: string | null;
   pay_frequency: string | null;
+  has_infonavit_credit: boolean | null;
+  bank_name: string | null;
+  bank_clabe: string | null;
   weekly_hours: number | string | null;
   work_days: string | null;
   work_start_time: string | null;
@@ -252,6 +257,11 @@ const labelMap: Record<string, Record<string, string>> = {
     WEEKLY: "semanal",
     BIWEEKLY: "quincenal",
   },
+  salaryPeriod: {
+    MONTHLY: "mensual",
+    WEEKLY: "semanal",
+    DAILY: "diario",
+  },
 };
 
 const fullAddress = (profile: Profile) =>
@@ -290,6 +300,16 @@ const formatMaritalStatus = (profile: Profile) => {
 
   return labelMap.maritalStatus[maritalStatus] || maritalStatus;
 };
+
+const contractFullName = (profile: Profile) =>
+  [
+    profile.paternal_last_name,
+    profile.maternal_last_name,
+    profile.first_name,
+  ]
+    .map(clean)
+    .filter(Boolean)
+    .join(" ") || clean(profile.name);
 
 const safeFileName = (value: string) =>
   value
@@ -414,8 +434,9 @@ export async function POST(request: Request) {
           ? `${workStart} a ${workEnd}`
           : "";
 
+    const employeeContractName = contractFullName(profile);
     const variables: Record<string, string> = {
-      FULL_NAME: clean(profile.name),
+      FULL_NAME: employeeContractName,
       FIRST_NAME: clean(profile.first_name),
       PATERNAL_LAST_NAME: clean(profile.paternal_last_name),
       MATERNAL_LAST_NAME: clean(profile.maternal_last_name),
@@ -426,6 +447,7 @@ export async function POST(request: Request) {
       MARITAL_STATUS: formatMaritalStatus(profile),
       CURP: clean(profile.curp),
       RFC: clean(profile.rfc),
+      FISCAL_POSTAL_CODE: clean(profile.fiscal_postal_code),
       NSS: clean(profile.nss),
       FULL_ADDRESS: fullAddress(profile),
       CONTRACT_START_DATE: formatDate(profile.contract_start_date),
@@ -446,9 +468,27 @@ export async function POST(request: Request) {
       WORK_SCHEDULE: workSchedule,
       MONTHLY_SALARY: salary ? formatMoney(salary) : "",
       MONTHLY_SALARY_TEXT: salary ? moneyToWords(salary) : "",
+      SALARY_PERIOD:
+        labelMap.salaryPeriod[clean(profile.salary_period)] ||
+        clean(profile.salary_period) ||
+        "mensual",
       PAY_FREQUENCY:
         labelMap.payFrequency[clean(profile.pay_frequency)] ||
         clean(profile.pay_frequency),
+      HAS_INFONAVIT_CREDIT:
+        profile.has_infonavit_credit === null
+          ? ""
+          : profile.has_infonavit_credit
+            ? "SI"
+            : "NO",
+      INFONAVIT_CREDIT_TEXT:
+        profile.has_infonavit_credit === null
+          ? ""
+          : profile.has_infonavit_credit
+            ? "SI CUENTA CON CREDITO INFONAVIT"
+            : "NO CUENTA CON CREDITO INFONAVIT",
+      BANK_NAME: clean(profile.bank_name),
+      BANK_CLABE: clean(profile.bank_clabe),
       STORE_NAME: clean(firstStore?.name),
       STORE_ADDRESS: clean(firstStore?.address),
       ACCOUNT_NAME: accountName,
@@ -500,7 +540,9 @@ export async function POST(request: Request) {
     );
 
     const output = await zip.generateAsync({ type: "nodebuffer" });
-    const fileName = `Contrato_${safeFileName(profile.name || "empleado")}.docx`;
+    const fileName = `Contrato_${safeFileName(
+      employeeContractName || "empleado"
+    )}.docx`;
 
     return new NextResponse(new Blob([new Uint8Array(output)]), {
       status: 200,

@@ -18,6 +18,7 @@ type CreateEmployeePayload = {
   maritalStatus?: string;
   curp?: string;
   rfc?: string;
+  fiscalPostalCode?: string;
   nss?: string;
   phone?: string;
   email?: string;
@@ -34,7 +35,11 @@ type CreateEmployeePayload = {
   contractStartDate?: string;
   contractEndDate?: string;
   salary?: string | number;
+  salaryPeriod?: string;
   payFrequency?: string;
+  hasInfonavitCredit?: string;
+  bankName?: string;
+  bankClabe?: string;
   weeklyHours?: string | number;
   workDays?: string;
   workStartTime?: string;
@@ -80,6 +85,7 @@ const allowedContractTypes = new Set([
 ]);
 
 const allowedPayFrequencies = new Set(["DAILY", "WEEKLY", "BIWEEKLY"]);
+const allowedSalaryPeriods = new Set(["MONTHLY", "WEEKLY", "DAILY"]);
 
 const jsonError = (error: string, status: number) =>
   NextResponse.json({ error }, { status });
@@ -92,6 +98,30 @@ const nullableString = (value: unknown) => cleanString(value) || null;
 const normalizedUpper = (value: unknown) => {
   const cleanValue = cleanString(value);
   return cleanValue ? cleanValue.toUpperCase().replace(/\s+/g, "") : null;
+};
+
+const normalizedDigits = (value: unknown) => {
+  const cleanValue = cleanString(value).replace(/\D/g, "");
+  return cleanValue || null;
+};
+
+const exactLengthValue = (
+  value: string | null,
+  label: string,
+  expectedLength: number
+) => {
+  if (!value || value.length !== expectedLength) {
+    return `${label} debe tener exactamente ${expectedLength} caracteres.`;
+  }
+
+  return null;
+};
+
+const nullableBoolean = (value: unknown) => {
+  const cleanValue = cleanString(value);
+  if (cleanValue === "YES") return true;
+  if (cleanValue === "NO") return false;
+  return null;
 };
 
 const nullableDate = (value: unknown) => nullableString(value);
@@ -220,9 +250,29 @@ export async function POST(request: Request) {
 
     const salary = nullableSalary(body.salary);
     const weeklyHours = nullableNonNegativeNumber(body.weeklyHours);
+    const curp = normalizedUpper(body.curp);
+    const rfc = normalizedUpper(body.rfc);
+    const nss = normalizedDigits(body.nss);
+    const fiscalPostalCode = normalizedDigits(body.fiscalPostalCode);
+    const bankClabe = normalizedDigits(body.bankClabe);
+    const fixedLengthError =
+      exactLengthValue(curp, "CURP", 18) ||
+      exactLengthValue(rfc, "RFC", 13) ||
+      exactLengthValue(nss, "NSS", 11);
 
     if (Number.isNaN(salary)) {
       return jsonError("El sueldo debe ser un numero mayor o igual a cero.", 400);
+    }
+
+    if (fixedLengthError) {
+      return jsonError(fixedLengthError, 400);
+    }
+
+    if (bankClabe && bankClabe.length !== 18) {
+      return jsonError(
+        "La CLABE interbancaria debe tener exactamente 18 digitos.",
+        400
+      );
     }
 
     if (Number.isNaN(weeklyHours)) {
@@ -318,9 +368,10 @@ export async function POST(request: Request) {
       phone: nullableString(body.phone),
       role,
       hire_date: nullableDate(body.hireDate),
-      curp: normalizedUpper(body.curp),
-      rfc: normalizedUpper(body.rfc),
-      nss: normalizedUpper(body.nss),
+      curp,
+      rfc,
+      fiscal_postal_code: fiscalPostalCode,
+      nss,
       birth_date: nullableDate(body.birthDate),
       birth_place: nullableString(body.birthPlace),
       nationality: nullableString(body.nationality),
@@ -337,7 +388,11 @@ export async function POST(request: Request) {
       contract_start_date: contractStartDate,
       contract_end_date: contractEndDate,
       salary,
+      salary_period: nullableEnum(body.salaryPeriod, allowedSalaryPeriods),
       pay_frequency: nullableEnum(body.payFrequency, allowedPayFrequencies),
+      has_infonavit_credit: nullableBoolean(body.hasInfonavitCredit),
+      bank_name: nullableString(body.bankName),
+      bank_clabe: bankClabe,
       weekly_hours: weeklyHours,
       work_days: nullableString(body.workDays),
       work_start_time: nullableTime(body.workStartTime),

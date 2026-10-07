@@ -42,6 +42,7 @@ type EmployeeProfile = {
   marital_status: string | null;
   curp: string | null;
   rfc: string | null;
+  fiscal_postal_code: string | null;
   nss: string | null;
   phone: string | null;
   email: string | null;
@@ -58,7 +59,11 @@ type EmployeeProfile = {
   contract_start_date: string | null;
   contract_end_date: string | null;
   salary: number | string | null;
+  salary_period: string | null;
   pay_frequency: string | null;
+  has_infonavit_credit: boolean | null;
+  bank_name: string | null;
+  bank_clabe: string | null;
   weekly_hours: number | string | null;
   work_days: string | null;
   work_start_time: string | null;
@@ -87,6 +92,7 @@ type FormState = {
   maritalStatus: string;
   curp: string;
   rfc: string;
+  fiscalPostalCode: string;
   nss: string;
   phone: string;
   email: string;
@@ -103,7 +109,11 @@ type FormState = {
   contractStartDate: string;
   contractEndDate: string;
   salary: string;
+  salaryPeriod: string;
   payFrequency: string;
+  hasInfonavitCredit: string;
+  bankName: string;
+  bankClabe: string;
   weeklyHours: string;
   workDays: string;
   workStartTime: string;
@@ -126,6 +136,7 @@ const initialForm: FormState = {
   maritalStatus: "",
   curp: "",
   rfc: "",
+  fiscalPostalCode: "",
   nss: "",
   phone: "",
   email: "",
@@ -142,7 +153,11 @@ const initialForm: FormState = {
   contractStartDate: "",
   contractEndDate: "",
   salary: "",
+  salaryPeriod: "",
   payFrequency: "",
+  hasInfonavitCredit: "",
+  bankName: "",
+  bankClabe: "",
   weeklyHours: "",
   workDays: "",
   workStartTime: "",
@@ -190,6 +205,17 @@ const payFrequencies = [
   { value: "DAILY", label: "Diario" },
   { value: "WEEKLY", label: "Semanal" },
   { value: "BIWEEKLY", label: "Quincenal" },
+];
+
+const salaryPeriods = [
+  { value: "MONTHLY", label: "Mensual" },
+  { value: "WEEKLY", label: "Semanal" },
+  { value: "DAILY", label: "Diario" },
+];
+
+const yesNoOptions = [
+  { value: "YES", label: "SI" },
+  { value: "NO", label: "NO" },
 ];
 
 export default function EmployeesPage() {
@@ -250,6 +276,7 @@ export default function EmployeesPage() {
       maritalStatus: profile.marital_status || "",
       curp: profile.curp || "",
       rfc: profile.rfc || "",
+      fiscalPostalCode: profile.fiscal_postal_code || "",
       nss: profile.nss || "",
       phone: profile.phone || "",
       email: profile.email || "",
@@ -266,7 +293,16 @@ export default function EmployeesPage() {
       contractStartDate: profile.contract_start_date || "",
       contractEndDate: profile.contract_end_date || "",
       salary: profile.salary === null ? "" : String(profile.salary),
+      salaryPeriod: profile.salary_period || "",
       payFrequency: profile.pay_frequency || "",
+      hasInfonavitCredit:
+        profile.has_infonavit_credit === null
+          ? ""
+          : profile.has_infonavit_credit
+            ? "YES"
+            : "NO",
+      bankName: profile.bank_name || "",
+      bankClabe: profile.bank_clabe || "",
       weeklyHours: profile.weekly_hours === null ? "" : String(profile.weekly_hours),
       workDays: profile.work_days || "",
       workStartTime: profile.work_start_time?.slice(0, 5) || "",
@@ -448,10 +484,35 @@ export default function EmployeesPage() {
     setSelectedStores({});
   };
 
+  const validateFixedLength = (
+    value: string,
+    label: string,
+    expectedLength: number
+  ) => {
+    if (value.trim().length !== expectedLength) {
+      setMessageType("error");
+      setMessage(
+        `${label} debe tener exactamente ${expectedLength} caracteres.`
+      );
+      return false;
+    }
+
+    return true;
+  };
+
   const handleSaveEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage("");
+
+    if (
+      !validateFixedLength(form.curp, "CURP", 18) ||
+      !validateFixedLength(form.rfc, "RFC", 13) ||
+      !validateFixedLength(form.nss, "NSS", 11)
+    ) {
+      setLoading(false);
+      return;
+    }
 
     if (
       isPromoter &&
@@ -682,17 +743,38 @@ export default function EmployeesPage() {
               <TextInput
                 label="CURP"
                 value={form.curp}
-                onChange={(value) => updateField("curp", value.toUpperCase())}
+                onChange={(value) =>
+                  updateField("curp", value.toUpperCase().replace(/\s+/g, ""))
+                }
+                required
+                minLength={18}
+                maxLength={18}
               />
               <TextInput
                 label="RFC"
                 value={form.rfc}
-                onChange={(value) => updateField("rfc", value.toUpperCase())}
+                onChange={(value) =>
+                  updateField("rfc", value.toUpperCase().replace(/\s+/g, ""))
+                }
+                required
+                minLength={13}
+                maxLength={13}
+              />
+              <TextInput
+                label="Codigo postal fiscal"
+                value={form.fiscalPostalCode}
+                onChange={(value) =>
+                  updateField("fiscalPostalCode", value.replace(/\D/g, ""))
+                }
+                maxLength={5}
               />
               <TextInput
                 label="NSS"
                 value={form.nss}
-                onChange={(value) => updateField("nss", value)}
+                onChange={(value) => updateField("nss", value.replace(/\D/g, ""))}
+                required
+                minLength={11}
+                maxLength={11}
               />
             </FormSection>
 
@@ -795,11 +877,38 @@ export default function EmployeesPage() {
                 onChange={(value) => updateField("salary", value)}
               />
               <SelectInput
+                label="Tipo de sueldo"
+                value={form.salaryPeriod}
+                onChange={(value) => updateField("salaryPeriod", value)}
+                options={salaryPeriods}
+                placeholder="Selecciona tipo"
+              />
+              <SelectInput
                 label="Periodicidad"
                 value={form.payFrequency}
                 onChange={(value) => updateField("payFrequency", value)}
                 options={payFrequencies}
                 placeholder="Selecciona periodicidad"
+              />
+              <SelectInput
+                label="Tiene credito Infonavit?"
+                value={form.hasInfonavitCredit}
+                onChange={(value) => updateField("hasInfonavitCredit", value)}
+                options={yesNoOptions}
+                placeholder="Selecciona una opcion"
+              />
+              <TextInput
+                label="Banco"
+                value={form.bankName}
+                onChange={(value) => updateField("bankName", value)}
+              />
+              <TextInput
+                label="CLABE interbancaria"
+                value={form.bankClabe}
+                onChange={(value) =>
+                  updateField("bankClabe", value.replace(/\D/g, ""))
+                }
+                maxLength={18}
               />
             </FormSection>
 
@@ -1038,6 +1147,8 @@ function TextInput({
   disabled = false,
   min,
   step,
+  minLength,
+  maxLength,
 }: {
   label: string;
   value: string;
@@ -1047,6 +1158,8 @@ function TextInput({
   disabled?: boolean;
   min?: string;
   step?: string;
+  minLength?: number;
+  maxLength?: number;
 }) {
   return (
     <div>
@@ -1060,6 +1173,8 @@ function TextInput({
         disabled={disabled}
         min={min}
         step={step}
+        minLength={minLength}
+        maxLength={maxLength}
       />
     </div>
   );
