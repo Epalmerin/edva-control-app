@@ -99,6 +99,13 @@ export default function Sidebar({
             </Link>
 
             <Link
+              href="/admin/recruitment"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Reclutamiento
+            </Link>
+
+            <Link
               href="/admin/incidences"
               className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
             >
@@ -156,6 +163,13 @@ export default function Sidebar({
               className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
             >
               Incidencias
+            </Link>
+
+            <Link
+              href="/rh/recruitment"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Reclutamiento
             </Link>
           </>
         )}

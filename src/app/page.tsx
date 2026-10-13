@@ -19,14 +19,30 @@ export default function LoginPage() {
     setLoading(true);
     setMessage("");
 
-    // 1. Validar correo y contraseña
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    let loginError: unknown = null;
 
-    if (error) {
-      setMessage("Correo electrónico o contraseña incorrectos.");
+    try {
+      // 1. Validar correo y contraseña
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      loginError = error;
+    } catch (error) {
+      loginError = error;
+    }
+
+    if (loginError) {
+      const isNetworkError =
+        loginError instanceof Error &&
+        /failed to fetch|network|fetch/i.test(loginError.message);
+
+      setMessage(
+        isNetworkError
+          ? "No se pudo conectar con Supabase. Revisa tu conexión a internet y vuelve a intentar."
+          : "Correo electrónico o contraseña incorrectos."
+      );
       setLoading(false);
       return;
     }
