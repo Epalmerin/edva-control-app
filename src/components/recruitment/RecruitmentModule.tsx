@@ -36,6 +36,14 @@ const stages = [
 ];
 
 const stageLabels = Object.fromEntries(stages.map((stage) => [stage.value, stage.label]));
+const stageOrder = stages.map((stage) => stage.value);
+
+const isStageAtLeast = (currentStage: string, targetStage: string) => {
+  const currentIndex = stageOrder.indexOf(currentStage);
+  const targetIndex = stageOrder.indexOf(targetStage);
+
+  return currentIndex >= 0 && targetIndex >= 0 && currentIndex >= targetIndex;
+};
 
 const emptyVacancy = {
   title: "",
@@ -602,7 +610,14 @@ export default function RecruitmentModule({
       .eq("id", applicationId)
       .single();
 
-    if (currentError || !current || current.stage === newStage) return;
+    if (
+      currentError ||
+      !current ||
+      current.stage === newStage ||
+      isStageAtLeast(current.stage, newStage)
+    ) {
+      return;
+    }
 
     const newStatus =
       newStage === "CONTRATADO"
@@ -645,6 +660,7 @@ export default function RecruitmentModule({
     setLoading(true);
     setMessage("");
 
+    try {
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData.session?.user.id;
 
@@ -881,6 +897,14 @@ export default function RecruitmentModule({
     }
 
     setLoading(false);
+    } catch (error) {
+      console.error("Error de conexion en reclutamiento:", error);
+      setMessageType("error");
+      setMessage(
+        "No se pudo conectar con Supabase. Revisa tu conexion a internet y vuelve a intentar."
+      );
+      setLoading(false);
+    }
   }, [view, applicationId]);
 
   useEffect(() => {
@@ -891,8 +915,20 @@ export default function RecruitmentModule({
     setSaving(true);
     setMessage("");
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const userId = sessionData.session?.user.id;
+    let userId = "";
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      userId = sessionData.session?.user.id || "";
+    } catch (error) {
+      console.error("Error de sesion en reclutamiento:", error);
+      setMessageType("error");
+      setMessage(
+        "No se pudo conectar con Supabase. Revisa tu conexion a internet y vuelve a intentar."
+      );
+      setSaving(false);
+      return false;
+    }
 
     if (!userId) {
       setMessageType("error");
@@ -1832,13 +1868,22 @@ export default function RecruitmentModule({
     const application = data.application;
     const questionnaire = data.questionnaireVersion;
     const etsScore = calculateEts(answers);
-    const contactDone = (data.contacts || []).length > 0;
+    const currentStage = application?.stage || "POSTULACION_RECIBIDA";
+    const contactDone =
+      (data.contacts || []).length > 0 ||
+      isStageAtLeast(currentStage, "CONTACTO_INICIAL");
     const questionnaireDone = (data.responses || []).some(
       (response: any) => response.status === "FINALIZED"
-    );
-    const evaluationDone = (data.evaluations || []).length > 0;
-    const clientDone = (data.clientReviews || []).length > 0;
-    const offerDone = (data.offers || []).length > 0;
+    ) || isStageAtLeast(currentStage, "PRE_FILTRO");
+    const evaluationDone =
+      (data.evaluations || []).length > 0 ||
+      isStageAtLeast(currentStage, "EVALUACION");
+    const clientDone =
+      (data.clientReviews || []).length > 0 ||
+      isStageAtLeast(currentStage, "ENVIADO_CLIENTE");
+    const offerDone =
+      (data.offers || []).length > 0 ||
+      isStageAtLeast(currentStage, "OFERTA");
 
     if (!application) {
       return <Panel title="Postulacion">No se encontro la postulacion.</Panel>;
