@@ -104,6 +104,18 @@ const emptyCandidate = {
   futureContactConsent: "NOT_ASKED",
 };
 
+const hiringDocuments = [
+  "Identificacion oficial",
+  "CURP",
+  "RFC",
+  "NSS",
+  "Comprobante de domicilio",
+  "Cuenta bancaria / CLABE",
+  "Contrato firmado",
+  "Aviso de privacidad",
+  "Fotografia",
+];
+
 const etsOperationalQuestions = [
   {
     id: "labor_status",
@@ -443,6 +455,24 @@ const splitTags = (value: unknown) =>
 
 const pickSingle = (value: any) => (Array.isArray(value) ? value[0] : value);
 
+const splitCandidateName = (fullName: unknown) => {
+  const parts = cleanString(fullName).split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 3) {
+    return {
+      paternalLastName: parts[0],
+      maternalLastName: parts[1],
+      firstName: parts.slice(2).join(" "),
+    };
+  }
+
+  return {
+    paternalLastName: "",
+    maternalLastName: "",
+    firstName: parts.join(" "),
+  };
+};
+
 const escapeHtml = (value: unknown) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -535,6 +565,15 @@ export default function RecruitmentModule({
       title: "",
       dueAt: "",
       comment: "",
+    },
+    hiring: {
+      hiredBy: "",
+      documentsReceivedBy: "",
+      receivedDocuments: "",
+      actualStartDate: "",
+      employeeEmail: "",
+      temporaryPassword: "",
+      notes: "",
     },
   });
 
@@ -1401,6 +1440,87 @@ export default function RecruitmentModule({
         );
       }
 
+      if (action === "saveHiring") {
+        const applicationId = cleanString(payload.applicationId);
+        const hiredBy = cleanString(payload.hiredBy);
+        const documentsReceivedBy = cleanString(payload.documentsReceivedBy);
+        const actualStartDate = cleanString(payload.actualStartDate);
+        const receivedDocuments = Array.isArray(payload.receivedDocuments)
+          ? payload.receivedDocuments.map(cleanString).filter(Boolean)
+          : splitTags(payload.receivedDocuments);
+
+        if (!applicationId) return fail("Falta la postulacion.");
+        if (!hiredBy) return fail("Indica quien contrata.");
+        if (!documentsReceivedBy) return fail("Indica quien recibe documentos.");
+        if (receivedDocuments.length === 0) {
+          return fail("Selecciona al menos un documento recibido.");
+        }
+
+        const { data: current, error: currentError } = await supabase
+          .from("recruitment_applications")
+          .select("*")
+          .eq("id", applicationId)
+          .single();
+
+        if (currentError || !current) return fail("No se encontro la postulacion.");
+
+        const { error } = await supabase
+          .from("recruitment_applications")
+          .update({
+            actual_start_date: actualStartDate || current.actual_start_date,
+            next_action_party: "EDVA",
+            next_action: "Completar alta de empleado y generar contrato laboral.",
+            updated_by: userId,
+          })
+          .eq("id", applicationId);
+
+        if (error) return fail(error.message);
+
+        const documentComment = [
+          `Contrata: ${hiredBy}`,
+          `Recibe documentos: ${documentsReceivedBy}`,
+          nullableString(payload.notes) ? `Notas: ${cleanString(payload.notes)}` : "",
+        ]
+          .filter(Boolean)
+          .join(". ");
+
+        for (const documentName of receivedDocuments) {
+          const { error: documentError } = await supabase
+            .from("recruitment_document_checklist")
+            .update({
+              status: "RECEIVED",
+              comment: documentComment,
+              reviewed_at: new Date().toISOString(),
+              reviewer_id: userId,
+            })
+            .eq("application_id", applicationId)
+            .eq("document_name", documentName);
+
+          if (documentError) return fail(documentError.message);
+        }
+
+        await addEvent({
+          applicationId,
+          candidateId: current.candidate_id,
+          vacancyId: current.vacancy_id,
+          eventType: "CONTRATACION_REGISTRADA",
+          comment: `${documentComment}. Documentos: ${receivedDocuments.join(", ")}.`,
+          metadata: {
+            hiredBy,
+            documentsReceivedBy,
+            receivedDocuments,
+            actualStartDate,
+          },
+        });
+        await setAutomaticStage(
+          applicationId,
+          "CONTRATADO",
+          "EDVA",
+          userId,
+          "Contratacion registrada y lista para alta de empleado."
+        );
+      }
+
       if (action === "resetProcess") {
         const applicationId = cleanString(payload.applicationId);
         if (!applicationId) return fail("Falta la postulacion.");
@@ -1864,6 +1984,83 @@ export default function RecruitmentModule({
     reportWindow.document.close();
   };
 
+  const toggleHiringDocument = (documentName: string) => {
+    setDetailForms((current) => {
+      const documents = splitTags(current.hiring.receivedDocuments);
+      const nextDocuments = documents.includes(documentName)
+        ? documents.filter((item) => item !== documentName)
+        : [...documents, documentName];
+
+      return {
+        ...current,
+        hiring: {
+          ...current.hiring,
+          receivedDocuments: nextDocuments.join(", "),
+        },
+      };
+    });
+  };
+
+  const sendToEmployeeOnboarding = (application: any) => {
+    const candidate = application.candidate || {};
+    const vacancy = application.vacancy || {};
+    const latestOffer = (data.offers || [])[0] || {};
+    const parsedName = splitCandidateName(candidate.full_name);
+    const startDate =
+      detailForms.hiring.actualStartDate ||
+      application.actual_start_date ||
+      application.expected_start_date ||
+      latestOffer.proposed_start_date ||
+      "";
+    const selectedAccounts =
+      vacancy.account_id && vacancy.store_id ? [vacancy.account_id] : [];
+    const selectedStores =
+      vacancy.account_id && vacancy.store_id
+        ? { [vacancy.account_id]: [vacancy.store_id] }
+        : {};
+
+    window.localStorage.setItem(
+      "recruitmentEmployeeDraft",
+      JSON.stringify({
+        source: "recruitment",
+        firstName: parsedName.firstName,
+        paternalLastName: parsedName.paternalLastName,
+        maternalLastName: parsedName.maternalLastName,
+        phone: candidate.phone || candidate.phone_normalized || "",
+        email:
+          detailForms.hiring.employeeEmail ||
+          candidate.email ||
+          candidate.email_normalized ||
+          "",
+        state: candidate.state || vacancy.state || "",
+        municipality: candidate.municipality || "",
+        hireDate: startDate,
+        role: "PROMOTOR",
+        contractType: "FIXED_TERM",
+        contractStartDate: startDate,
+        salary: String(
+          application.offered_salary || latestOffer.salary || vacancy.salary_base || ""
+        ),
+        salaryPeriod:
+          application.offered_salary_period ||
+          latestOffer.salary_period ||
+          vacancy.salary_period ||
+          "MONTHLY",
+        payFrequency: "BIWEEKLY",
+        workDays:
+          application.offered_rest_days ||
+          latestOffer.rest_days ||
+          vacancy.work_days ||
+          "",
+        password: detailForms.hiring.temporaryPassword,
+        selectedAccounts,
+        selectedStores,
+      })
+    );
+
+    window.location.href = "/admin/employees";
+  };
+
   const renderApplicationDetail = () => {
     const application = data.application;
     const questionnaire = data.questionnaireVersion;
@@ -1884,6 +2081,16 @@ export default function RecruitmentModule({
     const offerDone =
       (data.offers || []).length > 0 ||
       isStageAtLeast(currentStage, "OFERTA");
+    const hiringDone = isStageAtLeast(currentStage, "CONTRATADO");
+    const hiringDocumentOptions = Array.from(
+      new Set([
+        ...hiringDocuments,
+        ...(data.documents || []).map((document: any) => document.document_name),
+      ])
+    ).filter(Boolean);
+    const selectedHiringDocuments = splitTags(
+      detailForms.hiring.receivedDocuments
+    );
 
     if (!application) {
       return <Panel title="Postulacion">No se encontro la postulacion.</Panel>;
@@ -2192,6 +2399,148 @@ export default function RecruitmentModule({
             saving={saving}
           />
           <MiniList rows={data.tasks || []} primary="title" secondary="status" />
+        </StepPanel>
+
+        <StepPanel
+          number={7}
+          title="Contratacion"
+          done={hiringDone}
+          unlocked={offerDone}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-5">
+            <Input
+              label="Quien contrata"
+              value={detailForms.hiring.hiredBy}
+              onChange={(value) =>
+                setDetailForms((current) => ({
+                  ...current,
+                  hiring: { ...current.hiring, hiredBy: value },
+                }))
+              }
+            />
+            <Input
+              label="Quien recibe documentos"
+              value={detailForms.hiring.documentsReceivedBy}
+              onChange={(value) =>
+                setDetailForms((current) => ({
+                  ...current,
+                  hiring: { ...current.hiring, documentsReceivedBy: value },
+                }))
+              }
+            />
+            <Input
+              label="Fecha real de ingreso"
+              type="date"
+              value={detailForms.hiring.actualStartDate}
+              onChange={(value) =>
+                setDetailForms((current) => ({
+                  ...current,
+                  hiring: { ...current.hiring, actualStartDate: value },
+                }))
+              }
+            />
+            <Input
+              label="Correo para alta"
+              type="email"
+              value={detailForms.hiring.employeeEmail}
+              onChange={(value) =>
+                setDetailForms((current) => ({
+                  ...current,
+                  hiring: { ...current.hiring, employeeEmail: value },
+                }))
+              }
+              placeholder={application.candidate?.email || ""}
+            />
+            <Input
+              label="Contrasena temporal"
+              type="password"
+              value={detailForms.hiring.temporaryPassword}
+              onChange={(value) =>
+                setDetailForms((current) => ({
+                  ...current,
+                  hiring: { ...current.hiring, temporaryPassword: value },
+                }))
+              }
+            />
+            <Textarea
+              label="Notas de contratacion"
+              value={detailForms.hiring.notes}
+              onChange={(value) =>
+                setDetailForms((current) => ({
+                  ...current,
+                  hiring: { ...current.hiring, notes: value },
+                }))
+              }
+            />
+          </div>
+
+          <div className="mb-5">
+            <p className="text-sm font-medium text-neutral-700 mb-2">
+              Documentos recibidos
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {hiringDocumentOptions.map((documentName) => (
+                <label
+                  key={documentName}
+                  className="flex items-center gap-3 border rounded-lg bg-neutral-50 p-3 text-sm font-semibold text-neutral-800"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedHiringDocuments.includes(documentName)}
+                    onChange={() => toggleHiringDocument(documentName)}
+                  />
+                  {documentName}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+            <Info
+              label="Alta de empleado"
+              value="Se precargara con candidato, vacante, sueldo y tienda."
+            />
+            <Info
+              label="Contrato laboral"
+              value="Se genera desde Empleados cuando el expediente quede completo."
+            />
+            <Info
+              label="Documentos"
+              value={`${selectedHiringDocuments.length} seleccionados`}
+            />
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-3">
+            <button
+              type="button"
+              className={redButton}
+              disabled={saving}
+              onClick={() =>
+                postAction({
+                  action: "saveHiring",
+                  applicationId: application.id,
+                  ...detailForms.hiring,
+                })
+              }
+            >
+              Guardar contratacion
+            </button>
+            <button
+              type="button"
+              className={smallButton}
+              onClick={() => sendToEmployeeOnboarding(application)}
+            >
+              Enviar a alta de empleado
+            </button>
+          </div>
+
+          <div className="mt-5">
+            <MiniList
+              rows={data.documents || []}
+              primary="document_name"
+              secondary="status"
+            />
+          </div>
         </StepPanel>
 
         <Panel title="Historial">

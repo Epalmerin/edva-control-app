@@ -125,6 +125,12 @@ type FormState = {
 
 type SelectedAccountStores = Record<string, string[]>;
 
+type RecruitmentEmployeeDraft = Partial<FormState> & {
+  selectedAccounts?: string[];
+  selectedStores?: SelectedAccountStores;
+  source?: string;
+};
+
 const initialForm: FormState = {
   firstName: "",
   paternalLastName: "",
@@ -441,6 +447,35 @@ export default function EmployeesPage() {
 
     loadOperationCatalogs();
     loadInitialEmployees();
+
+    const rawDraft = window.localStorage.getItem("recruitmentEmployeeDraft");
+    if (!rawDraft) return;
+
+    try {
+      const {
+        selectedAccounts: draftSelectedAccounts,
+        selectedStores: draftSelectedStores,
+        source,
+        ...draftForm
+      } = JSON.parse(rawDraft) as RecruitmentEmployeeDraft;
+
+      setForm((current) => ({
+        ...current,
+        ...draftForm,
+      }));
+      setSelectedAccounts(draftSelectedAccounts || []);
+      setSelectedStores(draftSelectedStores || {});
+      setMessageType("success");
+      setMessage(
+        source === "recruitment"
+          ? "Datos precargados desde Reclutamiento. Completa CURP, RFC, NSS, domicilio, nomina y guarda el empleado."
+          : "Datos precargados. Revisa la informacion antes de guardar."
+      );
+      window.localStorage.removeItem("recruitmentEmployeeDraft");
+    } catch (error) {
+      console.error("Error leyendo precarga de reclutamiento:", error);
+      window.localStorage.removeItem("recruitmentEmployeeDraft");
+    }
   }, []);
 
   const updateField = (field: keyof FormState, value: string) => {
