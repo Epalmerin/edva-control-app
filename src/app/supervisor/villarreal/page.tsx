@@ -117,16 +117,13 @@ export default function SupervisorVillarrealPage() {
       visitsResult,
       salesTodayResult,
       recentSalesResult,
+      directoryResult,
     ] = await Promise.all([
       supabase
         .from("employee_store_assignments")
         .select(`
           employee_id,
           store_id,
-          profiles:employee_id (
-            name,
-            email
-          ),
           stores:store_id (
             id,
             name,
@@ -182,7 +179,19 @@ export default function SupervisorVillarrealPage() {
           ticket_number
         `)
         .gte("sale_date", threeDaysAgo),
+      supabase.rpc("get_employee_directory"),
     ]);
+
+    if (directoryResult.error) {
+      setMessage(`Error al cargar nombres: ${directoryResult.error.message}`);
+      setLoading(false);
+      return;
+    }
+    const directory = new Map<string, { name: string; email: string }>(
+      (directoryResult.data || []).map((profile: { id: string; name: string; email: string }) =>
+        [profile.id, { name: profile.name, email: profile.email }]
+      )
+    );
 
     if (assignmentsResult.error) {
       setMessage(`Error al cargar asignaciones: ${assignmentsResult.error.message}`);
@@ -217,9 +226,7 @@ export default function SupervisorVillarrealPage() {
     const cleanAssignments = (assignmentsResult.data || [])
       .map((item: any) => ({
         ...item,
-        profiles: Array.isArray(item.profiles)
-          ? item.profiles[0]
-          : item.profiles,
+        profiles: directory.get(item.employee_id) || null,
         stores: Array.isArray(item.stores) ? item.stores[0] : item.stores,
       }))
       .filter((item: Assignment) =>

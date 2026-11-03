@@ -24,11 +24,11 @@ export default function RoleGuard({ allowedRoles, children }: RoleGuardProps) {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, active")
         .eq("id", userId)
         .single();
 
-      if (!profile || !allowedRoles.includes(profile.role)) {
+      if (!profile || profile.active !== true || !allowedRoles.includes(profile.role)) {
         window.location.href = "/";
         return;
       }

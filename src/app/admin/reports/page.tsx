@@ -192,8 +192,13 @@ export default function ReportsPage() {
     setMessage("Preparando ZIP de fotografias...");
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Tu sesion ha expirado. Inicia sesion nuevamente.");
+
       const response = await fetch(
-        `/api/admin/export-photos?startDate=${photoStartDate}&endDate=${photoEndDate}&employeeId=all`
+        `/api/admin/export-photos?startDate=${photoStartDate}&endDate=${photoEndDate}&employeeId=all`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
       );
 
       if (!response.ok) {

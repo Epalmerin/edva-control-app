@@ -10,10 +10,43 @@ function cleanFileName(value: string) {
 }
 
 export async function GET(request: NextRequest) {
+  const token = request.headers.get("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
+  const jsonError = (message: string, status: number) =>
+    NextResponse.json({ error: message }, {
+      status,
+      headers: { "Cache-Control": "private, no-store" },
+    });
+
+  if (!token) return jsonError("No autenticado.", 401);
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !anonKey) {
+    return jsonError("Configuracion de Supabase incompleta.", 500);
+  }
+
+  // Use the caller's JWT throughout: this export must also respect database RLS.
   const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    supabaseUrl,
+    anonKey,
+    {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    }
   );
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  if (userError || !userData.user) return jsonError("Sesion invalida.", 401);
+
+  const { data: caller, error: callerError } = await supabase
+    .from("profiles")
+    .select("role, active")
+    .eq("id", userData.user.id)
+    .single();
+
+  if (callerError || caller?.role !== "ADMIN" || caller.active !== true) {
+    return jsonError("No tienes permisos para exportar fotografias.", 403);
+  }
 
   const { searchParams } = new URL(request.url);
 
@@ -22,10 +55,19 @@ export async function GET(request: NextRequest) {
   const employeeId = searchParams.get("employeeId");
 
   if (!startDate || !endDate) {
-    return NextResponse.json(
-      { error: "Debes enviar fecha inicio y fecha fin." },
-      { status: 400 }
-    );
+    return jsonError("Debes enviar fecha inicio y fecha fin.", 400);
+  }
+
+  const validDate = (value: string) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    Number.isFinite(Date.parse(value)) &&
+    new Date(value).toISOString().slice(0, 10) === value;
+  if (!validDate(startDate) || !validDate(endDate) || startDate > endDate) {
+    return jsonError("El periodo de fechas no es valido.", 400);
+  }
+  if (employeeId && employeeId !== "all" &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(employeeId)) {
+    return jsonError("El empleado no es valido.", 400);
   }
 
   let query = supabase
@@ -43,7 +85,8 @@ export async function GET(request: NextRequest) {
     .gte("created_at", `${startDate}T00:00:00`)
     .lte("created_at", `${endDate}T23:59:59`)
     .not("photo_url", "is", null)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .limit(251);
 
   if (employeeId && employeeId !== "all") {
     query = query.eq("employee_id", employeeId);
@@ -52,24 +95,15 @@ export async function GET(request: NextRequest) {
   const { data: records, error } = await query;
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return jsonError("No fue posible consultar las fotografias.", 500);
   }
 
   if (!records || records.length === 0) {
-    return NextResponse.json(
-      { error: "No hay fotos en ese periodo." },
-      { status: 404 }
-    );
+    return jsonError("No hay fotos en ese periodo.", 404);
   }
 
   if (records.length > 250) {
-    return NextResponse.json(
-      {
-        error:
-          "Demasiadas fotos. Reduce el rango de fechas o selecciona un promotor.",
-      },
-      { status: 413 }
-    );
+    return jsonError("Demasiadas fotos. Reduce el rango de fechas o selecciona un promotor.", 413);
   }
 
   const zip = new JSZip();
@@ -112,6 +146,8 @@ export async function GET(request: NextRequest) {
     headers: {
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="fotos-asistencia_${startDate}_${endDate}.zip"`,
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

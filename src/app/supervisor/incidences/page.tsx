@@ -187,11 +187,7 @@ export default function SupervisorIncidencesPage() {
           supervisor_reviewed_by,
           supervisor_reviewed_at,
           supervisor_comment,
-          rh_status,
-          profiles:employee_id (
-            name,
-            email
-          )
+          rh_status
         `)
         .in("employee_id", employeeIds)
         .order("created_at", { ascending: false });
@@ -199,6 +195,14 @@ export default function SupervisorIncidencesPage() {
       if (error) {
         throw error;
       }
+
+      const { data: directoryData, error: directoryError } = await supabase.rpc("get_employee_directory");
+      if (directoryError) throw directoryError;
+      const directory = new Map<string, { name: string; email: string }>(
+        (directoryData || []).map((profile: { id: string; name: string; email: string }) =>
+          [profile.id, { name: profile.name, email: profile.email }]
+        )
+      );
 
       const normalized = (data || []).map((item: any) => ({
         ...item,
@@ -209,9 +213,7 @@ export default function SupervisorIncidencesPage() {
         rh_status:
           item.rh_status || "PENDING",
 
-        profiles: Array.isArray(item.profiles)
-          ? item.profiles[0] || null
-          : item.profiles,
+        profiles: directory.get(item.employee_id) || null,
       })) as Incidence[];
 
       setIncidences(normalized);
