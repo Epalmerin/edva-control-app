@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
+import SuburbiaSalesOverview from "./SuburbiaSalesOverview";
+import { isSuburbiaStore } from "@/lib/suburbia-products";
 
 type SaleRecord = {
   id: string;
@@ -13,6 +15,8 @@ type SaleRecord = {
   sku: string | null;
   model: string | null;
   size: string | null;
+  product_catalog_id: string | null;
+  sku_source: string | null;
   ticket_number: string;
   amount: number;
   created_at: string;
@@ -186,7 +190,7 @@ export default function AdminSalesPage() {
       const [saleRows, storeRows, targetResult, accountResult] = await Promise.all([
         noStores ? Promise.resolve([] as SaleRecord[]) : readAllRows<SaleRecord>(async (from, to) => {
           let query = supabase.from("sales_records").select(`
-            id, employee_id, sale_date, sku, model, size, ticket_number, amount, created_at, store_id,
+            id, employee_id, sale_date, sku, model, size, product_catalog_id, sku_source, ticket_number, amount, created_at, store_id,
             profiles:employee_id (name, email),
             stores:store_id (name, chain_name, brand_name)
           `).gte("sale_date", startDate).lte("sale_date", endDate);
@@ -286,9 +290,9 @@ export default function AdminSalesPage() {
 
   const chains = useMemo(() => {
     return Array.from(
-      new Set(sales.map((sale) => sale.stores?.chain_name || "SIN CADENA"))
+      new Set([...visibleStores.map((store) => store.chain_name || "SIN CADENA"), ...sales.map((sale) => sale.stores?.chain_name || "SIN CADENA")])
     ).sort();
-  }, [sales]);
+  }, [sales, visibleStores]);
 
   const brands = useMemo(() => {
     return Array.from(
@@ -312,6 +316,9 @@ export default function AdminSalesPage() {
     (sum, sale) => sum + Number(sale.amount || 0),
     0
   );
+
+  const isSuburbiaView = selectedChain.trim().toUpperCase() === "SUBURBIA" ||
+    (selectedChain === "TODAS" && visibleStores.length > 0 && visibleStores.every(isSuburbiaStore));
 
   const tickets = filteredSales.length;
 
@@ -384,19 +391,20 @@ export default function AdminSalesPage() {
   }, [filteredSales, visibleStores]);
 
   return (
-    <main className="min-h-screen bg-neutral-100 flex">
+    <main className={`min-h-screen flex ${isSuburbiaView ? "bg-gradient-to-br from-rose-50 via-neutral-50 to-white" : "bg-neutral-100"}`}>
       <Sidebar userName="Eduardo Palmerin" />
 
       <section className="flex-1 min-w-0 p-6 xl:p-8">
         <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-4xl font-bold text-neutral-800">
-              Concentrado de ventas
+              {isSuburbiaView ? "Ventas Suburbia" : "Concentrado de ventas"}
             </h1>
 
             <p className="text-neutral-500 mt-2">
-              Vista ejecutiva por cadena, marca, tienda y promotor.
+              {isSuburbiaView ? "Consulta la venta, el producto y la tarifa del catálogo en el mismo lugar." : "Vista ejecutiva por cadena, marca, tienda y promotor."}
             </p>
+            {isSuburbiaView && <p className="text-xs text-red-700 mt-3 font-semibold">Solo administradores · Importes en MXN</p>}
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -459,7 +467,7 @@ export default function AdminSalesPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
+        {!isSuburbiaView && <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
           <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-neutral-200">
             <p className="text-xs uppercase tracking-wide text-neutral-400">
               Venta mensual
@@ -494,6 +502,10 @@ export default function AdminSalesPage() {
             </p>
           </div>
         </div>
+
+        }
+
+        {isSuburbiaView && !loading && !message && <SuburbiaSalesOverview key={`${activeAccountId}-${selectedMonth}-${selectedYear}`} sales={filteredSales} />}
 
         {loading && (
           <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
@@ -599,7 +611,7 @@ export default function AdminSalesPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-2xl shadow-md overflow-hidden mb-8">
+        {!isSuburbiaView && <div className="bg-white rounded-2xl shadow-md overflow-hidden mb-8">
           <div className="px-6 py-5 border-b border-neutral-200 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-neutral-900">
@@ -712,10 +724,7 @@ export default function AdminSalesPage() {
               })}
             </div>
           )}
-        </div>
-
-
-
+        </div>}
       </section>
     </main>
   );

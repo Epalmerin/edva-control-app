@@ -42,3 +42,13 @@ engine for role isolation, legacy-write compatibility, canonicalization and
 direct input, and with read-only authorization checks against the live database.
 The migration compares all original sales fields under a table lock before and
 after adding columns, and aborts if any original value changes.
+# Vista de ventas del administrador
+
+Al seleccionar Suburbia en Ventas (o una cuenta cuyas tiendas sean exclusivamente Suburbia / Colchones Master), el administrador consulta la venta, el modelo, SKU, tamaño y tarifa por unidad. La búsqueda y el filtro de origen afectan tanto las filas como sus indicadores. Las metas por vendedor conservan su alcance mensual por cuenta.
+
+La comisión acumulada suma en centavos una tarifa vigente por registro con `sku_source = 'catalog'` y `product_catalog_id` identificado. Una tarifa de cero sí cuenta como definida. Las ventas anteriores, SKU escritos sin producto identificado y tarifas ausentes quedan pendientes y se excluyen del importe. No se deducen equivalencias por SKU histórico ni se actualizan ventas al abrir el detalle. El acumulado es una consulta del catálogo vigente, no un registro de pagos ni una tarifa histórica congelada.
+
+Las tarifas se consultan por separado en `sales_product_commissions`, bajo la política existente que admite exclusivamente administradores activos. Un error de consulta muestra el acumulado como no disponible, nunca como cero.
+
+Validación del cálculo: `node --test scripts/test-suburbia-summary.cjs`.
+
