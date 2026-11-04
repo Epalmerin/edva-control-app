@@ -1,5 +1,7 @@
 "use client";
 
+import { storedFileReference } from "@/lib/storage-files";
+
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -42,13 +44,18 @@ export default function PromoterIncidencesPage() {
     let fileUrl = "";
 
     if (file) {
-      const fileExt = file.name.split(".").pop();
+      if (file.size > 20 * 1024 * 1024) {
+        setMessage("El archivo debe pesar como maximo 20 MB.");
+        setLoading(false);
+        return;
+      }
+      const fileExt = (file.name.split(".").pop() || "file").replace(/[^a-z0-9]/gi, "").slice(0, 12) || "file";
       const fileName = `${userId}-${Date.now()}.${fileExt}`;
       const filePath = `${userId}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from("incidence-files")
-        .upload(filePath, file);
+        .upload(filePath, file, { cacheControl: "0" });
 
       if (uploadError) {
         setMessage(`Error al subir archivo: ${uploadError.message}`);
@@ -56,11 +63,7 @@ export default function PromoterIncidencesPage() {
         return;
       }
 
-      const { data: publicUrlData } = supabase.storage
-        .from("incidence-files")
-        .getPublicUrl(filePath);
-
-      fileUrl = publicUrlData.publicUrl;
+      fileUrl = storedFileReference("incidence-files", filePath);
     }
 
     const { error } = await supabase.from("incidence_requests").insert({

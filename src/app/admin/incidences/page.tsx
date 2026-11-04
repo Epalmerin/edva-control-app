@@ -1,5 +1,7 @@
 "use client";
 
+import ProtectedFileLink from "@/components/ProtectedFileLink";
+
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
@@ -207,7 +209,7 @@ export default function AdminIncidencesPage() {
                     <p className="text-xs font-bold text-neutral-400 uppercase">Motivo</p>
                     <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap">{i.reason||"Sin motivo registrado"}</p>
                     <p className="text-xs text-neutral-400 mt-3">Registrada: {fmtDateTime(i.created_at)}</p>
-                    {i.file_url&&<a href={i.file_url} target="_blank" rel="noreferrer" className="inline-flex mt-3 px-3 py-2 rounded-lg bg-neutral-900 text-white text-xs font-semibold">Ver archivo adjunto</a>}
+                    {i.file_url&&<ProtectedFileLink reference={i.file_url} className="inline-flex mt-3 px-3 py-2 rounded-lg bg-neutral-900 text-white text-xs font-semibold">Ver archivo adjunto</ProtectedFileLink>}
                   </div>
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="bg-white border rounded-xl p-4"><p className="text-xs font-bold text-neutral-500 uppercase">Supervisión</p><p className="text-sm font-semibold mt-2">{i.supervisor_status==="APPROVED"?"Validada":i.supervisor_status==="REJECTED"?"Rechazada":"Pendiente"}</p>{i.supervisor_reviewed_by&&<p className="text-xs text-neutral-500 mt-2">Por {reviewers[i.supervisor_reviewed_by]||"Usuario"}</p>}{i.supervisor_reviewed_at&&<p className="text-xs text-neutral-400 mt-1">{fmtDateTime(i.supervisor_reviewed_at)}</p>}{i.supervisor_comment&&<p className="text-sm text-neutral-600 mt-2">{i.supervisor_comment}</p>}</div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { storedFileReference } from "@/lib/storage-files";
+
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -389,6 +391,7 @@ Siguiente registro permitido: ${labels[expectedType]}`
         .from("attendance-photos")
         .upload(filePath, compressedPhoto, {
           contentType: "image/jpeg",
+          cacheControl: "0",
         });
 
       if (uploadError) {
@@ -397,11 +400,7 @@ Siguiente registro permitido: ${labels[expectedType]}`
         return;
       }
 
-      const { data: publicUrlData } = supabase.storage
-        .from("attendance-photos")
-        .getPublicUrl(filePath);
-
-      photoUrl = publicUrlData.publicUrl;
+      photoUrl = storedFileReference("attendance-photos", filePath);
     }
 
     const { error: insertError } = await supabase

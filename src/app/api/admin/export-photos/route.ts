@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
 import { createClient } from "@supabase/supabase-js";
+import { parseStoredFile } from "@/lib/storage-files";
 
 function cleanFileName(value: string) {
   return value
@@ -109,17 +110,18 @@ export async function GET(request: NextRequest) {
   const zip = new JSZip();
 
   for (const row of records) {
-    const url = row.photo_url as string;
-    const marker = "/attendance-photos/";
-    const photoPath = url.split(marker)[1];
-
-    if (!photoPath) continue;
+    const fileReference = parseStoredFile(row.photo_url as string, supabaseUrl);
+    if (!fileReference || fileReference.bucket !== "attendance-photos") {
+      return jsonError("Una fotografia tiene una referencia no valida. Revisa el registro.", 400);
+    }
 
     const { data: file, error: downloadError } = await supabase.storage
       .from("attendance-photos")
-      .download(photoPath);
+      .download(fileReference.path);
 
-    if (downloadError || !file) continue;
+    if (downloadError || !file) {
+      return jsonError("No fue posible descargar todas las fotografias. Intenta nuevamente.", 502);
+    }
 
     const arrayBuffer = await file.arrayBuffer();
 

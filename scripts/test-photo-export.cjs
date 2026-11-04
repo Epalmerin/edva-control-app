@@ -10,6 +10,13 @@ const routePath = path.resolve(__dirname, '../src/app/api/admin/export-photos/ro
 const source = ts.transpileModule(fs.readFileSync(routePath, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText;
+const helperPath = path.resolve(__dirname, '../src/lib/storage-files.ts');
+const helper = new Module(helperPath, module);
+helper.filename = helperPath;
+helper.paths = Module._nodeModulePaths(path.dirname(helperPath));
+helper._compile(ts.transpileModule(fs.readFileSync(helperPath, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, helperPath);
 const USER = '00000000-0000-4000-8000-000000000001';
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'public-test-key';
@@ -44,7 +51,8 @@ function setup(overrides = {}) {
     storage: { from(bucket) {
       assert.equal(bucket, 'attendance-photos');
       return { download: async (filePath) => {
-        assert.equal(filePath, 'fixture.jpg'); calls.downloads++;
+        assert.equal(filePath, USER + '/fixture.jpg'); calls.downloads++;
+        if (state.downloadError) return { data: null, error: new Error('denied') };
         return { data: new Blob(['fictional photo fixture']), error: null };
       } };
     } },
@@ -62,7 +70,7 @@ function setup(overrides = {}) {
       assert.equal(options.auth.persistSession, false);
       return client;
     },
-  } : originalRequire(id);
+  } : id === '@/lib/storage-files' ? helper.exports : originalRequire(id);
   mod._compile(source, routePath);
   const request = (query = 'startDate=2026-11-01&endDate=2026-11-03&employeeId=all', authorization = 'Bearer test-token') =>
     mod.exports.GET(new Request(`https://edva.example/api/admin/export-photos?${query}`, {
@@ -119,7 +127,7 @@ test('query errors do not disclose database internals', async () => {
 });
 test('active admin downloads the same named ZIP with its own JWT and employee filter', async () => {
   const { request, calls } = setup({ records: [{ id: 'photo-id', employee_id: USER, type: 'ENTRY',
-    photo_url: 'https://example.supabase.co/storage/v1/object/public/attendance-photos/fixture.jpg',
+    photo_url: `https://example.supabase.co/storage/v1/object/public/attendance-photos/${USER}/fixture.jpg`,
     created_at: '2026-11-01T10:00:00Z', profiles: { name: 'Fixture Employee' } }] });
   const response = await request(`startDate=2026-11-01&endDate=2026-11-03&employeeId=${USER}`);
   assert.equal(response.status, 200);
@@ -129,4 +137,21 @@ test('active admin downloads the same named ZIP with its own JWT and employee fi
   const zip = await JSZip.loadAsync(await response.arrayBuffer());
   assert.equal(await zip.file('Fixture_Employee/2026-11-01_ENTRY_photo-id.jpg').async('string'), 'fictional photo fixture');
   assert.equal(calls.downloads, 1);
+});
+test('active admin exports a new private storage reference', async () => {
+  const { request, calls } = setup({ records: [{ id: 'photo-id', employee_id: USER, type: 'ENTRY',
+    photo_url: `storage://attendance-photos/${USER}/fixture.jpg`,
+    created_at: '2026-11-01T10:00:00Z', profiles: { name: 'Fixture Employee' } }] });
+  assert.equal((await request()).status, 200); assert.equal(calls.downloads, 1);
+});
+test('external or malformed file references cannot be downloaded by export', async () => {
+  for (const photo_url of ['https://attacker.invalid/attendance-photos/fixture.jpg',
+    `storage://incidence-files/${USER}/fixture.jpg`, `storage://attendance-photos/${USER}/../fixture.jpg`]) {
+    const { request, calls } = setup({ records: [{ photo_url }] });
+    assert.equal((await request()).status, 400); assert.equal(calls.downloads, 0);
+  }
+});
+test('a failed private file download fails export instead of silently omitting photos', async () => {
+  const { request } = setup({ downloadError: true, records: [{ photo_url: `storage://attendance-photos/${USER}/fixture.jpg` }] });
+  assert.equal((await request()).status, 502);
 });

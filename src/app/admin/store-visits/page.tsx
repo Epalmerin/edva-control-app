@@ -1,5 +1,7 @@
 "use client";
 
+import ProtectedFileLink from "@/components/ProtectedFileLink";
+
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
@@ -440,13 +442,9 @@ export default function AdminStoreVisitsPage() {
                               </button>
 
                               {visit.arrival.photo_url && (
-                                <a
-                                  href={visit.arrival.photo_url}
-                                  target="_blank"
-                                  className="bg-red-500 text-white px-3 py-2 rounded-xl text-xs font-semibold"
-                                >
+                                <ProtectedFileLink reference={visit.arrival.photo_url} className="bg-red-500 text-white px-3 py-2 rounded-xl text-xs font-semibold">
                                   Foto
-                                </a>
+                                </ProtectedFileLink>
                               )}
                             </div>
                           )}
@@ -472,13 +470,9 @@ export default function AdminStoreVisitsPage() {
                               </button>
 
                               {visit.departure.photo_url && (
-                                <a
-                                  href={visit.departure.photo_url}
-                                  target="_blank"
-                                  className="bg-red-500 text-white px-3 py-2 rounded-xl text-xs font-semibold"
-                                >
+                                <ProtectedFileLink reference={visit.departure.photo_url} className="bg-red-500 text-white px-3 py-2 rounded-xl text-xs font-semibold">
                                   Foto
-                                </a>
+                                </ProtectedFileLink>
                               )}
                             </div>
                           )}

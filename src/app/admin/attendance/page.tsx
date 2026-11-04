@@ -1,5 +1,7 @@
 "use client";
 
+import ProtectedFileLink from "@/components/ProtectedFileLink";
+
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
@@ -650,14 +652,9 @@ export default function AdminAttendancePage() {
 
                                 <div className="flex gap-2">
                                   {record.photo_url && (
-                                    <a
-                                      href={record.photo_url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-xs font-semibold text-neutral-700"
-                                    >
+                                    <ProtectedFileLink reference={record.photo_url} className="px-3 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-xs font-semibold text-neutral-700">
                                       Ver foto
-                                    </a>
+                                    </ProtectedFileLink>
                                   )}
 
                                   <button

@@ -1,5 +1,7 @@
 "use client";
 
+import ProtectedFileLink from "@/components/ProtectedFileLink";
+
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -685,16 +687,9 @@ export default function SupervisorIncidencesPage() {
                               </div>
 
                               {incidence.file_url && (
-                                <a
-                                  href={
-                                    incidence.file_url
-                                  }
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex mt-4 px-3 py-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold"
-                                >
+                                <ProtectedFileLink reference={incidence.file_url} className="inline-flex mt-4 px-3 py-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold">
                                   Ver archivo adjunto
-                                </a>
+                                </ProtectedFileLink>
                               )}
 
                             </div>

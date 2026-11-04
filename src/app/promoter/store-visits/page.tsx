@@ -1,5 +1,7 @@
 "use client";
 
+import { storedFileReference } from "@/lib/storage-files";
+
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -318,6 +320,7 @@ Ahora registra llegada o salida de tienda.`
           .from("attendance-photos")
           .upload(filePath, compressedPhoto, {
             contentType: "image/jpeg",
+          cacheControl: "0",
           });
 
         if (uploadError) {
@@ -326,11 +329,7 @@ Ahora registra llegada o salida de tienda.`
           return;
         }
 
-        const { data: publicUrlData } = supabase.storage
-          .from("attendance-photos")
-          .getPublicUrl(filePath);
-
-        photoUrl = publicUrlData.publicUrl;
+        photoUrl = storedFileReference("attendance-photos", filePath);
       } catch (error: any) {
         setMessage(
           error?.message ||
