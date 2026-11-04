@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import PromoterBottomNav from "@/components/PromoterBottomNav";
 import { supabase } from "@/lib/supabase";
+import SuburbiaSaleForm from "@/components/SuburbiaSaleForm";
+import { isSuburbiaStore, type SuburbiaSaleInput } from "@/lib/suburbia-products";
+import suburbiaStyles from "@/components/SuburbiaSaleForm.module.css";
 
 type Store = {
   id: string;
@@ -16,6 +19,7 @@ type SaleRecord = {
   sale_date: string;
   sku: string | null;
   model: string | null;
+  size: string | null;
   ticket_number: string;
   amount: number;
   created_at: string;
@@ -88,6 +92,10 @@ export default function PromoterSalesPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  const selectedStore = stores.find((store) => store.id === storeId);
+  const usesSuburbiaCatalog = isSuburbiaStore(selectedStore) ||
+    (!storeId && stores.length > 0 && stores.every(isSuburbiaStore));
 
   const money = (value: number) =>
     value.toLocaleString("es-MX", {
@@ -165,6 +173,7 @@ export default function PromoterSalesPage() {
         sale_date,
         sku,
         model,
+        size,
         ticket_number,
         amount,
         created_at,
@@ -401,10 +410,33 @@ export default function PromoterSalesPage() {
     await loadMonthlySales();
   };
 
-  return (
-    <main className="min-h-screen bg-neutral-100 p-5 pb-24">
-      <div className="max-w-md mx-auto space-y-6">
+  const handleSaveSuburbiaSale = async (sale: SuburbiaSaleInput): Promise<boolean> => {
+    if (loading) return false;
+    setLoading(true);
+    setMessage("");
+    try {
+      if (sale.store_id !== storeId || !isSuburbiaStore(stores.find((store) => store.id === sale.store_id))) {
+        throw new Error("Selecciona una tienda Suburbia para registrar esta venta.");
+      }
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session?.user.id) throw new Error("No se encontró sesión activa.");
+      const { error } = await supabase.from("sales_records").insert({ employee_id: sessionData.session.user.id, ...sale });
+      if (error) throw error;
+      setMessage("Venta registrada correctamente.");
+      await loadMonthlySales();
+      return true;
+    } catch (error) {
+      const detail = error && typeof error === "object" && "message" in error ? String(error.message) : "Intenta nuevamente.";
+      setMessage(`Error al guardar venta: ${detail}`);
+      return false;
+    } finally { setLoading(false); }
+  };
 
+  return (
+    <main className={usesSuburbiaCatalog ? suburbiaStyles.page : "min-h-screen bg-neutral-100 p-5 pb-24"}>
+      <div className={usesSuburbiaCatalog ? "max-w-4xl mx-auto space-y-6" : "max-w-md mx-auto space-y-6"}>
+
+        {!usesSuburbiaCatalog && (<>
         {/* ENCABEZADO */}
         <div className="bg-neutral-900 text-white rounded-3xl p-6 shadow-xl">
           <h1 className="text-3xl font-black">Ventas</h1>
@@ -414,6 +446,14 @@ export default function PromoterSalesPage() {
           </p>
         </div>
 
+        </>)}
+
+        {usesSuburbiaCatalog ? (
+          <div>
+            <SuburbiaSaleForm stores={stores} storeId={storeId} onStoreChange={setStoreId} onSave={handleSaveSuburbiaSale} saving={loading} />
+            {message && <div role="status" className="mt-5 bg-white border border-red-100 rounded-2xl p-4 text-sm font-medium text-neutral-800">{message}</div>}
+          </div>
+        ) : (<>
         {/* NUEVA VENTA */}
         <div className="bg-white rounded-3xl shadow-md p-5">
           <h2 className="text-xl font-bold text-neutral-800 mb-5">
@@ -534,6 +574,8 @@ export default function PromoterSalesPage() {
             </div>
           )}
         </div>
+
+        </>)}
 
         {/* HISTÓRICO */}
         <div className="bg-white rounded-3xl shadow-md p-5">
@@ -854,6 +896,10 @@ export default function PromoterSalesPage() {
                                 <span className="mx-2">·</span>
                                 SKU: {sale.sku || "N/A"}
                               </p>
+
+                              {sale.stores?.chain_name?.trim().toUpperCase() === "SUBURBIA" && (
+                                <p className="text-xs text-neutral-500 mt-1">Tamaño: {sale.size || "No registrado"}</p>
+                              )}
 
                               {storeName === "VARIAS TIENDAS" && (
                                 <p className="text-xs text-neutral-400 mt-1">

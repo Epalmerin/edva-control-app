@@ -93,6 +93,13 @@ export default function Sidebar({
             </Link>
 
             <Link
+              href="/admin/suburbia-catalog"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Catálogo Suburbia
+            </Link>
+
+            <Link
               href="/admin/sales-targets"
               className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
             >

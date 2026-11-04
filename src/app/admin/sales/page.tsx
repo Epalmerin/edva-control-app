@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
@@ -10,6 +12,7 @@ type SaleRecord = {
   sale_date: string;
   sku: string | null;
   model: string | null;
+  size: string | null;
   ticket_number: string;
   amount: number;
   created_at: string;
@@ -183,7 +186,7 @@ export default function AdminSalesPage() {
       const [saleRows, storeRows, targetResult, accountResult] = await Promise.all([
         noStores ? Promise.resolve([] as SaleRecord[]) : readAllRows<SaleRecord>(async (from, to) => {
           let query = supabase.from("sales_records").select(`
-            id, employee_id, sale_date, sku, model, ticket_number, amount, created_at, store_id,
+            id, employee_id, sale_date, sku, model, size, ticket_number, amount, created_at, store_id,
             profiles:employee_id (name, email),
             stores:store_id (name, chain_name, brand_name)
           `).gte("sale_date", startDate).lte("sale_date", endDate);
@@ -397,6 +400,7 @@ export default function AdminSalesPage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <Link href="/admin/suburbia-catalog" className="bg-white border border-neutral-300 text-neutral-800 px-4 py-3 rounded-xl font-semibold">Catálogo Suburbia</Link>
             <select
               value={selectedChain}
               onChange={(e) => setSelectedChain(e.target.value)}
@@ -686,6 +690,9 @@ export default function AdminSalesPage() {
                                   SKU: {sale.sku || "N/A"} · Modelo:{" "}
                                   {sale.model || "N/A"}
                                 </p>
+                                {sale.stores?.chain_name?.trim().toUpperCase() === "SUBURBIA" && (
+                                  <p className="text-xs text-neutral-400 mt-1">Tamaño: {sale.size || "No registrado"}</p>
+                                )}
                               </div>
 
                               <p className="text-sm text-neutral-500 xl:text-right">
