@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
@@ -111,17 +112,18 @@ export default function LoginPage() {
     <main className="min-h-screen bg-neutral-100 flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-6 md:p-10">
         <div className="flex flex-col items-center mb-8">
-          <h1 className="text-5xl font-black tracking-tight text-neutral-900">
-            ed<span className="text-red-500">va</span>
-          </h1>
+          <Image
+            src="/edva-logo.jpeg"
+            alt="EDVA MKT & Publicidad"
+            width={1483}
+            height={1061}
+            loading="eager"
+            className="h-auto w-52 max-w-full md:w-56"
+          />
 
-          <p className="text-red-400 tracking-[0.35em] text-[10px] md:text-xs mt-2 text-center">
-            MKT & PUBLICIDAD
-          </p>
-
-          <h2 className="text-2xl font-bold text-neutral-800 mt-8 text-center">
+          <h1 className="text-2xl font-bold text-neutral-800 mt-6 text-center">
             EDVA Control App
-          </h2>
+          </h1>
 
           <p className="text-sm text-neutral-500 mt-2 text-center">
             Control de asistencia, ventas e incidencias
