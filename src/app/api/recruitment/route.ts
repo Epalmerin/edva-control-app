@@ -112,7 +112,7 @@ async function getRecruitmentUser(request: Request): Promise<RecruitmentUser | N
     return jsonError("No tienes permisos para reclutamiento.", 403);
   }
 
-  if (profile.active === false) {
+  if (profile.active !== true) {
     return jsonError("Tu usuario esta inactivo.", 403);
   }
 

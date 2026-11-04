@@ -357,7 +357,7 @@ export async function POST(request: Request) {
       .eq("id", userData.user.id)
       .single();
 
-    if (callerProfileError || callerProfile?.role !== "ADMIN") {
+    if (callerProfileError || callerProfile?.role !== "ADMIN" || callerProfile.active !== true) {
       return jsonError("No tienes permisos para generar contratos.", 403);
     }
 

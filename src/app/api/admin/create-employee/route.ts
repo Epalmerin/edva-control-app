@@ -213,7 +213,7 @@ export async function POST(request: Request) {
       return jsonError("No tienes permisos para crear empleados.", 403);
     }
 
-    if (callerProfile.active === false) {
+    if (callerProfile.active !== true) {
       return jsonError("El usuario administrador esta inactivo.", 403);
     }
 

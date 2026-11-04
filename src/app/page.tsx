@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import type { CurrentAccessStatus } from "@/lib/access-status";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -61,10 +62,8 @@ export default function LoginPage() {
 
     // 3. Consultar rol y estatus del empleado
     const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role, active")
-      .eq("id", userId)
-      .maybeSingle();
+      .rpc("get_current_access_status")
+      .maybeSingle<CurrentAccessStatus>();
 
     if (profileError || !profile) {
       setMessage("No se encontró el perfil del usuario.");
@@ -74,7 +73,7 @@ export default function LoginPage() {
     }
 
     // 4. Bloquear usuarios dados de baja
-    if (profile.active === false) {
+    if (profile.active !== true) {
       await supabase.auth.signOut();
 
       setMessage(
