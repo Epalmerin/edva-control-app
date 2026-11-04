@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import AccountSelector from "@/components/AccountSelector";
 
@@ -23,15 +24,29 @@ export default function Sidebar({
 
   return (
     <aside className="w-72 min-h-screen bg-neutral-900 text-white p-6 flex flex-col">
-      <div className="mb-10">
-        <h1 className="text-4xl font-bold">
-          ed<span className="text-red-500">va</span>
-        </h1>
-
-        <p className="text-red-400 tracking-[0.3em] text-xs mt-2">
-          MKT & PUBLICIDAD
-        </p>
-      </div>
+      {isAdmin ? (
+        <div className="mb-10 flex items-center justify-center rounded-xl bg-white p-3">
+          <Image
+            src="/edva-logo.jpeg"
+            alt="EDVA MKT & Publicidad"
+            width={1483}
+            height={1061}
+            sizes="200px"
+            loading="eager"
+            className="h-auto w-full max-w-[200px]"
+          />
+        </div>
+      ) : (
+        <div className="mb-10">
+          <h1 className="text-4xl font-bold">
+            ed<span className="text-red-500">va</span>
+          </h1>
+  
+          <p className="text-red-400 tracking-[0.3em] text-xs mt-2">
+            MKT & PUBLICIDAD
+          </p>
+        </div>
+      )}
 
       <div className="mb-8">
         <p className="text-sm text-neutral-400">Bienvenido</p>
