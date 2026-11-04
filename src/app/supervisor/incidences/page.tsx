@@ -329,7 +329,7 @@ export default function SupervisorIncidencesPage() {
       const comment =
         comments[incidence.id]?.trim() || null;
 
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from("incidence_requests")
         .update({
           supervisor_status: status,
@@ -339,10 +339,15 @@ export default function SupervisorIncidencesPage() {
           supervisor_comment: comment,
         })
         .eq("id", incidence.id)
-        .eq("supervisor_status", "PENDING");
+        .eq("supervisor_status", "PENDING")
+        .select("id")
+        .maybeSingle();
 
       if (error) {
         throw error;
+      }
+      if (!updated) {
+        throw new Error("La incidencia cambio o ya no tienes permiso. Actualiza la pantalla.");
       }
 
       if (status === "APPROVED") {

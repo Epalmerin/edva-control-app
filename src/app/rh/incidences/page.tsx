@@ -358,7 +358,7 @@ const [accounts, setAccounts] = useState<
       const comment =
         comments[incidence.id]?.trim() || null;
 
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from("incidence_requests")
         .update({
           rh_status: status,
@@ -368,10 +368,15 @@ const [accounts, setAccounts] = useState<
         })
         .eq("id", incidence.id)
         .eq("rh_status", "PENDING")
-        .eq("supervisor_status", "APPROVED");
+        .eq("supervisor_status", "APPROVED")
+        .select("id")
+        .maybeSingle();
 
       if (error) {
         throw error;
+      }
+      if (!updated) {
+        throw new Error("La incidencia cambio o ya no tienes permiso. Actualiza la pantalla.");
       }
 
       setMessage(

@@ -129,8 +129,9 @@ export default function AdminIncidencesPage() {
       const payload=stage==="SUP"
         ? {supervisor_status:status,supervisor_reviewed_by:uid,supervisor_reviewed_at:now,supervisor_comment:comments[`sup-${i.id}`]?.trim()||null}
         : {rh_status:status,rh_reviewed_by:uid,rh_reviewed_at:now,rh_comment:comments[`rh-${i.id}`]?.trim()||null};
-      const {error}=await supabase.from("incidence_requests").update(payload).eq("id",i.id);
+      const {data:updated,error}=await supabase.from("incidence_requests").update(payload).eq("id",i.id).select("id").maybeSingle();
       if(error)throw error;
+      if(!updated)throw new Error("La incidencia cambio o ya no tienes permiso. Actualiza la pantalla.");
       setMessage(status==="REJECTED"?"La incidencia fue rechazada.":stage==="SUP"?"Incidencia validada.":"Incidencia autorizada.");
       await loadIncidences();
     }catch(e:any){setMessage(`Error al actualizar: ${e.message||"Error desconocido"}`);}
@@ -141,11 +142,12 @@ export default function AdminIncidencesPage() {
     setProcessingId(i.id); setMessage("");
     try{
       const uid=await userId(), now=new Date().toISOString();
-      const {error}=await supabase.from("incidence_requests").update({
+      const {data:updated,error}=await supabase.from("incidence_requests").update({
         supervisor_status:"APPROVED",supervisor_reviewed_by:uid,supervisor_reviewed_at:now,supervisor_comment:comments[`sup-${i.id}`]?.trim()||null,
         rh_status:"APPROVED",rh_reviewed_by:uid,rh_reviewed_at:now,rh_comment:comments[`rh-${i.id}`]?.trim()||null
-      }).eq("id",i.id);
+      }).eq("id",i.id).select("id").maybeSingle();
       if(error)throw error;
+      if(!updated)throw new Error("La incidencia cambio o ya no tienes permiso. Actualiza la pantalla.");
       setMessage("Incidencia validada y autorizada correctamente."); await loadIncidences();
     }catch(e:any){setMessage(`Error al autorizar: ${e.message||"Error desconocido"}`);}
     finally{setProcessingId(null);}
