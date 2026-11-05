@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
+import { getAttendanceState } from "@/lib/attendance-status";
 
 type Assignment = {
   employee_id: string;
   profiles: {
     name: string;
     email: string;
+    rest_days: number[] | null;
   } | null;
   stores: {
     name: string;
@@ -29,7 +31,9 @@ type ChainSummary = {
   total: number;
   reported: number;
   pending: number;
-  coverage: number;
+  resting: number;
+  expected: number;
+  coverage: number | null;
 };
 
 function getMexicoTodayRange() {
@@ -63,6 +67,7 @@ export default function AdminPage() {
   const [attendanceEntries, setAttendanceEntries] = useState<
     AttendanceRecord[]
   >([]);
+  const [operationDate, setOperationDate] = useState(() => getMexicoTodayRange().date);
 
   const [loading, setLoading] = useState(true);
 
@@ -158,7 +163,7 @@ export default function AdminPage() {
         .select("*", { count: "exact", head: true })
         .gte("created_at", start).lt("created_at", end);
       let assignmentsQuery = supabase.from("employee_store_assignments")
-        .select(`employee_id, profiles:employee_id (name, email),
+        .select(`employee_id, profiles:employee_id (name, email, rest_days),
           stores:store_id (name, chain_name, brand_name)`)
         .eq("active", true);
       let entriesQuery = supabase.from("attendance_records")
@@ -201,6 +206,7 @@ export default function AdminPage() {
       if (currentRequest !== requestId.current) return;
 
       setActiveAccountName(accountName);
+      setOperationDate(date);
       setEmployees(employeesResult.count || 0);
       setAttendanceToday(attendanceResult.count || 0);
       setSalesToday(salesResult.count || 0);
@@ -237,6 +243,12 @@ export default function AdminPage() {
       .map((record) => record.employee_id));
   }, [attendanceEntries, assignments]);
 
+  const restingEmployees = useMemo(() => new Set(assignments
+    .filter((item) => getAttendanceState(
+      operationDate, item.profiles?.rest_days, reportedEmployees.has(item.employee_id)
+    ) === "rest")
+    .map((item) => item.employee_id)), [assignments, operationDate, reportedEmployees]);
+
   const chainSummaries = useMemo<ChainSummary[]>(() => {
     const map = new Map<
       string,
@@ -244,6 +256,7 @@ export default function AdminPage() {
         chain: string;
         employeeIds: Set<string>;
         reportedIds: Set<string>;
+        restingIds: Set<string>;
       }
     >();
 
@@ -255,6 +268,7 @@ export default function AdminPage() {
           chain,
           employeeIds: new Set<string>(),
           reportedIds: new Set<string>(),
+          restingIds: new Set<string>(),
         });
       }
 
@@ -262,11 +276,15 @@ export default function AdminPage() {
 
       item.employeeIds.add(assignment.employee_id);
 
-      if (attendanceEntries.some((record) =>
+      const hasEntry = attendanceEntries.some((record) =>
         record.employee_id === assignment.employee_id &&
         (record.stores?.chain_name || "Sin cadena") === chain
-      )) {
+      );
+      const state = getAttendanceState(operationDate, assignment.profiles?.rest_days, hasEntry);
+      if (state === "reported") {
         item.reportedIds.add(assignment.employee_id);
+      } else if (state === "rest") {
+        item.restingIds.add(assignment.employee_id);
       }
     });
 
@@ -274,33 +292,39 @@ export default function AdminPage() {
       .map((item) => {
         const total = item.employeeIds.size;
         const reported = item.reportedIds.size;
-        const pending = Math.max(total - reported, 0);
+        const resting = item.restingIds.size;
+        const expected = total - resting;
+        const pending = Math.max(expected - reported, 0);
 
         return {
           chain: item.chain,
           total,
           reported,
           pending,
-          coverage: total > 0 ? Math.round((reported / total) * 100) : 0,
+          resting,
+          expected,
+          coverage: expected > 0 ? Math.round((reported / expected) * 100) : null,
         };
       })
       .sort((a, b) => b.pending - a.pending);
-  }, [assignments, attendanceEntries]);
+  }, [assignments, attendanceEntries, operationDate]);
 
   const activePromoters = new Set(
     assignments.map((assignment) => assignment.employee_id)
   ).size;
 
   const reportedPromoters = reportedEmployees.size;
-  const pendingPromoters = Math.max(activePromoters - reportedPromoters, 0);
+  const restingPromoters = restingEmployees.size;
+  const expectedPromoters = activePromoters - restingPromoters;
+  const pendingPromoters = Math.max(expectedPromoters - reportedPromoters, 0);
 
   const attendanceCoverage =
-    activePromoters > 0
-      ? Math.round((reportedPromoters / activePromoters) * 100)
-      : 0;
+    expectedPromoters > 0
+      ? Math.round((reportedPromoters / expectedPromoters) * 100)
+      : null;
 
   const criticalChains = chainSummaries.filter(
-    (chain) => chain.pending > 0 || chain.coverage < 80
+    (chain) => chain.pending > 0 || (chain.coverage !== null && chain.coverage < 80)
   );
 
   return (
@@ -364,7 +388,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mb-8">
           <div className="bg-white rounded-2xl p-6 shadow-md">
             <p className="text-neutral-500 text-sm">Promotores activos</p>
             <p className="text-4xl font-black text-neutral-900 mt-3">
@@ -380,6 +404,13 @@ export default function AdminPage() {
           </div>
 
           <div className="bg-white rounded-2xl p-6 shadow-md">
+            <p className="text-neutral-500 text-sm">En descanso</p>
+            <p className="text-4xl font-black text-blue-600 mt-3">
+              {loading ? "..." : message ? "—" : restingPromoters}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-6 shadow-md">
             <p className="text-neutral-500 text-sm">Pendientes</p>
             <p className="text-4xl font-black text-red-500 mt-3">
               {loading ? "..." : message ? "—" : pendingPromoters}
@@ -389,7 +420,10 @@ export default function AdminPage() {
           <div className="bg-white rounded-2xl p-6 shadow-md">
             <p className="text-neutral-500 text-sm">Cobertura entrada</p>
             <p className="text-4xl font-black text-blue-500 mt-3">
-              {loading ? "..." : message ? "—" : `${attendanceCoverage}%`}
+              {loading ? "..." : message ? "—" : attendanceCoverage === null ? "No aplica" : `${attendanceCoverage}%`}
+            </p>
+            <p className="text-xs text-neutral-500 mt-2">
+              {expectedPromoters} promotores con entrada esperada
             </p>
           </div>
         </div>
@@ -403,7 +437,7 @@ export default function AdminPage() {
                 </h2>
 
                 <p className="text-sm text-neutral-500 mt-1">
-                  Cobertura de entrada del día por promotores únicos.
+                  Cobertura por promotores únicos con entrada esperada; se excluyen quienes descansan sin registrar entrada.
                 </p>
               </div>
 
@@ -422,6 +456,7 @@ export default function AdminPage() {
                     <th className="py-3">Cadena</th>
                     <th className="py-3 text-center">Promotores</th>
                     <th className="py-3 text-center">Presentes</th>
+                    <th className="py-3 text-center">En descanso</th>
                     <th className="py-3 text-center">Pendientes</th>
                     <th className="py-3 text-center">Cobertura</th>
                   </tr>
@@ -429,7 +464,7 @@ export default function AdminPage() {
 
                 <tbody>
                   {(loading || message || chainSummaries.length === 0) && (
-                    <tr><td colSpan={5} className="py-4 text-neutral-500">
+                    <tr><td colSpan={6} className="py-4 text-neutral-500">
                       {loading ? "Cargando..." : message ? "Datos no disponibles." : "No hay promotores con asignaciones activas en esta cuenta."}
                     </td></tr>
                   )}
@@ -445,6 +480,10 @@ export default function AdminPage() {
                         {chain.reported}
                       </td>
 
+                      <td className="py-4 text-center text-blue-600 font-bold">
+                        {chain.resting}
+                      </td>
+
                       <td className="py-4 text-center text-red-500 font-bold">
                         {chain.pending}
                       </td>
@@ -452,14 +491,16 @@ export default function AdminPage() {
                       <td className="py-4 text-center">
                         <span
                           className={`px-3 py-1 rounded-full font-bold text-xs ${
-                            chain.coverage >= 80
+                            chain.coverage === null
+                              ? "bg-neutral-100 text-neutral-600"
+                              : chain.coverage >= 80
                               ? "bg-green-100 text-green-700"
                               : chain.coverage >= 50
                               ? "bg-yellow-100 text-yellow-700"
                               : "bg-red-100 text-red-700"
                           }`}
                         >
-                          {chain.coverage}%
+                          {chain.coverage === null ? "No aplica" : `${chain.coverage}%`}
                         </span>
                       </td>
                     </tr>
