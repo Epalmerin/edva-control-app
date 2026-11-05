@@ -5,6 +5,7 @@ import ProtectedFileLink from "@/components/ProtectedFileLink";
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
+import { getAttendanceState, type AttendanceState } from "@/lib/attendance-status";
 
 type AttendanceRecord = {
   id: string;
@@ -30,6 +31,7 @@ type Employee = {
   id: string;
   name: string;
   email: string;
+  rest_days: number[] | null;
 };
 
 type Store = {
@@ -55,6 +57,7 @@ type PromoterRow = {
   records: AttendanceRecord[];
   lastRecord: AttendanceRecord | null;
   hasEntry: boolean;
+  attendanceState: AttendanceState;
 };
 
 const labels: Record<string, string> = {
@@ -181,7 +184,7 @@ export default function AdminAttendancePage() {
       if (activeAccountId === "all") {
         const { data: employeeData, error: employeeError } = await supabase
           .from("profiles")
-          .select("id, name, email")
+          .select("id, name, email, rest_days")
           .eq("role", "PROMOTOR")
           .eq("active", true)
           .order("name");
@@ -226,7 +229,7 @@ export default function AdminAttendancePage() {
         if (employeeIds.length > 0) {
           const { data: employeeData, error: employeeError } = await supabase
             .from("profiles")
-            .select("id, name, email")
+            .select("id, name, email, rest_days")
             .in("id", employeeIds)
             .eq("role", "PROMOTOR")
             .eq("active", true)
@@ -369,13 +372,15 @@ export default function AdminAttendancePage() {
         const recordStore = lastRecord?.store_id
           ? storesById.get(lastRecord.store_id) || null
           : null;
+        const hasEntry = employeeRecords.some((record) => record.type === "ENTRY");
 
         return {
           employee,
           store: recordStore || primaryStoreByEmployee.get(employee.id) || null,
           records: employeeRecords,
           lastRecord,
-          hasEntry: employeeRecords.some((record) => record.type === "ENTRY"),
+          hasEntry,
+          attendanceState: getAttendanceState(selectedDate, employee.rest_days, hasEntry),
         };
       })
       .sort((a, b) => {
@@ -383,7 +388,7 @@ export default function AdminAttendancePage() {
         if (storeCompare !== 0) return storeCompare;
         return a.employee.name.localeCompare(b.employee.name);
       });
-  }, [employees, records, storesById, primaryStoreByEmployee]);
+  }, [employees, records, storesById, primaryStoreByEmployee, selectedDate]);
 
   const reportedRows = useMemo(
     () => promoterRows.filter((row) => row.hasEntry),
@@ -391,7 +396,12 @@ export default function AdminAttendancePage() {
   );
 
   const pendingRows = useMemo(
-    () => promoterRows.filter((row) => !row.hasEntry),
+    () => promoterRows.filter((row) => row.attendanceState === "pending"),
+    [promoterRows]
+  );
+
+  const restingRows = useMemo(
+    () => promoterRows.filter((row) => row.attendanceState === "rest"),
     [promoterRows]
   );
 
@@ -465,14 +475,14 @@ export default function AdminAttendancePage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
+        <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-5">
           <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4">
             <p className="text-xs font-medium text-neutral-500">Presentes</p>
             <p className="text-2xl font-bold text-neutral-900 mt-1">
               {loading ? "—" : reportedRows.length}
             </p>
             <p className="text-xs text-neutral-400 mt-1">
-              de {employees.length} promotores
+              de {reportedRows.length + pendingRows.length} con entrada esperada
             </p>
           </div>
 
@@ -494,6 +504,14 @@ export default function AdminAttendancePage() {
               </span>
             </div>
           </button>
+
+          <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4">
+            <p className="text-xs font-medium text-neutral-500">En descanso</p>
+            <p className="text-2xl font-bold text-blue-600 mt-1">
+              {loading ? "—" : restingRows.length}
+            </p>
+            <p className="text-xs text-neutral-400 mt-1">Sin entrada requerida</p>
+          </div>
 
           <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4">
             <p className="text-xs font-medium text-neutral-500">En comida</p>
@@ -520,7 +538,7 @@ export default function AdminAttendancePage() {
                   Pendientes por reportar
                 </h2>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  Promotores sin registro de entrada en la fecha seleccionada.
+                  Sin entrada registrada; se excluyen los descansos configurados. Esto no confirma una falta.
                 </p>
               </div>
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-600">
@@ -530,7 +548,7 @@ export default function AdminAttendancePage() {
 
             {pendingRows.length === 0 ? (
               <div className="px-4 py-5 text-sm text-neutral-500">
-                Todos los promotores de la cuenta ya reportaron entrada.
+                No hay promotores pendientes de entrada en la fecha seleccionada.
               </div>
             ) : (
               <div className="divide-y divide-neutral-100">
@@ -541,6 +559,11 @@ export default function AdminAttendancePage() {
                   >
                     <p className="text-sm font-semibold text-neutral-800">
                       {row.employee.name}
+                      {row.employee.rest_days === null && (
+                        <span className="block text-xs font-normal text-amber-700 mt-1">
+                          Descanso sin configurar
+                        </span>
+                      )}
                     </p>
                     <p className="text-sm text-neutral-500 md:text-right">
                       {row.store?.name || "Sin tienda asignada"}
@@ -549,6 +572,32 @@ export default function AdminAttendancePage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {!loading && restingRows.length > 0 && (
+          <div className="bg-white border border-neutral-200 rounded-xl mb-5 overflow-hidden">
+            <div className="px-4 py-3 border-b border-neutral-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-neutral-900">En descanso</h2>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Descanso semanal registrado para la fecha seleccionada.
+                </p>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700">
+                {restingRows.length}
+              </span>
+            </div>
+            <div className="divide-y divide-neutral-100">
+              {restingRows.map((row) => (
+                <div key={row.employee.id} className="px-4 py-3 grid grid-cols-1 md:grid-cols-[1.3fr_1fr] gap-1 md:gap-4">
+                  <p className="text-sm font-semibold text-neutral-800">{row.employee.name}</p>
+                  <p className="text-sm text-neutral-500 md:text-right">
+                    {row.store?.name || "Sin tienda asignada"} · DESCANSO
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
