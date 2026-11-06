@@ -68,11 +68,12 @@ function compressImage(file: File): Promise<File> {
     const image = new Image();
     const objectUrl = URL.createObjectURL(file);
 
-    image.onload = () => {
+    image.onload = async () => {
       URL.revokeObjectURL(objectUrl);
 
-      const maxWidth = 720;
-      const maxHeight = 720;
+      const maxWidth = 1600;
+      const maxHeight = 1600;
+      const targetBytes = 500 * 1024;
 
       let width = image.width;
       let height = image.height;
@@ -102,27 +103,41 @@ function compressImage(file: File): Promise<File> {
 
       ctx.drawImage(image, 0, 0, width, height);
 
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error("No se pudo comprimir la imagen."));
-            return;
-          }
+      const encode = (quality: number) => new Promise<Blob>((done, fail) => {
+        canvas.toBlob((blob) => {
+          if (blob) done(blob);
+          else fail(new Error("No se pudo comprimir la imagen."));
+        }, "image/jpeg", quality);
+      });
 
-          const compressedFile = new File(
-            [blob],
-            `attendance-${Date.now()}.jpg`,
-            {
-              type: "image/jpeg",
-              lastModified: Date.now(),
-            }
-          );
+      try {
+        let blob = await encode(0.8);
 
-          resolve(compressedFile);
-        },
-        "image/jpeg",
-        0.5
-      );
+        // Preserve resolution first; reduce quality only for larger files.
+        for (const quality of [0.75, 0.7, 0.65]) {
+          if (blob.size <= targetBytes) break;
+          blob = await encode(quality);
+        }
+
+        // Exceptionally detailed images may need a smaller canvas as well.
+        // Draw from the original each time to avoid repeated resampling.
+        while (blob.size > targetBytes && Math.max(width, height) > 720) {
+          const scale = Math.max(720 / Math.max(width, height), 0.85);
+          width = Math.max(1, Math.round(width * scale));
+          height = Math.max(1, Math.round(height * scale));
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(image, 0, 0, width, height);
+          blob = await encode(0.65);
+        }
+
+        resolve(new File([blob], `attendance-${Date.now()}.jpg`, {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        }));
+      } catch (error) {
+        reject(error);
+      }
     };
 
     image.onerror = () => {
@@ -544,3 +559,4 @@ Siguiente registro permitido: ${labels[expectedType]}`
     </main>
   );
 }
+
