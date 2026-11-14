@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
+import { buildSuburbiaCommissions } from "./suburbia-commissions";
 
 type LoadingState = false | "excel" | "photos" | "catalogs";
 
@@ -28,6 +29,11 @@ type AttendanceRow = {
 };
 
 type SaleRow = {
+  id: string;
+  size: string | null;
+  quantity: number;
+  sku_source: string | null;
+  product_catalog_id: string | null;
   sale_date: string;
   ticket_number: string | null;
   amount: number | string | null;
@@ -135,7 +141,7 @@ export default function ReportsPage() {
   const [photoStartDate, setPhotoStartDate] = useState("");
   const [photoEndDate, setPhotoEndDate] = useState("");
 
-  const canGenerate = Boolean(selectedChain) && loading !== "excel";
+  const canGenerate = Boolean(selectedChain) && loading === false;
 
   const selectedChainLabel = useMemo(
     () => selectedChain || "Selecciona una cadena",
@@ -255,6 +261,7 @@ export default function ReportsPage() {
         : `${year}-${formattedMonth}-${String(lastDay).padStart(2, "0")}`;
 
     try {
+      const includeCommissions = selectedChain.trim().toUpperCase() === "SUBURBIA";
       const stores = await readAllRows<Store>((from, to) =>
         supabase
           .from("stores")
@@ -306,6 +313,11 @@ export default function ReportsPage() {
               .select(
                 `
                 sale_date,
+                id,
+                size,
+                quantity,
+                sku_source,
+                product_catalog_id,
                 ticket_number,
                 amount,
                 sku,
@@ -328,6 +340,7 @@ export default function ReportsPage() {
               .gte("sale_date", startDate)
               .lte("sale_date", endDate)
               .order("sale_date")
+              .order("id")
               .range(from, to)
           ),
           readAllRows<AccountStoreRow>((from, to) =>
@@ -358,6 +371,17 @@ export default function ReportsPage() {
               .range(from, to)
           ),
         ]);
+
+      // Separate administrator-only lookup. A failed lookup aborts the export.
+      const commissionRates = includeCommissions
+        ? await readAllRows<{ product_id: string; commission_amount: number | string }>((from, to) =>
+            supabase.from("sales_product_commissions").select("product_id, commission_amount")
+              .order("product_id").range(from, to))
+        : [];
+      const commissions = includeCommissions ? buildSuburbiaCommissions(
+        salesData.map((sale) => ({ ...sale, profiles: singleRelation(sale.profiles), stores: singleRelation(sale.stores) })),
+        Object.fromEntries(commissionRates.map((rate) => [rate.product_id, rate.commission_amount]))
+      ) : null;
 
       const accountIds = Array.from(
         new Set(accountStores.map((item) => item.account_id))
@@ -547,6 +571,7 @@ export default function ReportsPage() {
           Marca: store?.brand_name || "",
           SKU: item.sku || "",
           "Producto/Modelo": item.model || "",
+          ...(includeCommissions ? { Tamaño: item.size || "No registrado", Cantidad: item.quantity ?? 1 } : {}),
           Ticket: item.ticket_number || "",
           Precio: moneyValue(item.amount),
           "Cuota promotor": employeeTarget,
@@ -560,6 +585,7 @@ export default function ReportsPage() {
         {
           sku: string;
           model: string;
+          size: string;
           store: string;
           chain: string;
           brand: string;
@@ -573,11 +599,12 @@ export default function ReportsPage() {
         const model = item.model || "SIN MODELO";
         const store = singleRelation(item.stores);
         const storeName = store?.name || "SIN TIENDA";
-        const key = `${storeName}|${sku}|${model}`;
+        const key = `${storeName}|${sku}|${model}${includeCommissions ? `|${item.size || ""}` : ""}`;
         const existing =
           productMap.get(key) || {
             sku,
             model,
+            size: item.size || "No registrado",
             store: storeName,
             chain: store?.chain_name || selectedChain,
             brand: store?.brand_name || "",
@@ -585,7 +612,7 @@ export default function ReportsPage() {
             total: 0,
           };
 
-        existing.units += 1;
+        existing.units += includeCommissions ? (item.quantity ?? 1) : 1;
         existing.total += moneyValue(item.amount);
         productMap.set(key, existing);
       });
@@ -596,7 +623,8 @@ export default function ReportsPage() {
         Marca: item.brand,
         SKU: item.sku,
         "Producto/Modelo": item.model,
-        "Piezas/Tickets": item.units,
+        ...(includeCommissions ? { Tamaño: item.size } : {}),
+        ...(includeCommissions ? { Colchones: item.units } : { "Piezas/Tickets": item.units }),
         "Venta total": item.total,
         "Precio promedio": item.units > 0 ? item.total / item.units : 0,
       }));
@@ -636,6 +664,13 @@ export default function ReportsPage() {
           "Asistencias registradas": attendanceSheet.length,
           "Ventas registradas": salesSheet.length,
           Incidencias: incidencesSheet.length,
+          ...(commissions ? {
+            Colchones: commissions.units,
+            "Comisión acumulada (MXN)": commissions.total,
+            "Ventas con comisión definida": commissions.defined,
+            "Ventas pendientes de comisión": commissions.pending,
+            "Criterio de comisión": "Tarifa vigente del catálogo × cantidad. Pendientes excluidos. No indica pagos realizados.",
+          } : {}),
         },
       ];
 
@@ -671,6 +706,24 @@ export default function ReportsPage() {
         XLSX.utils.json_to_sheet(incidencesSheet),
         safeSheetName("Incidencias")
       );
+
+      if (commissions) {
+        const appendCommissions = (name: string, rows: object[], headers: string[]) => {
+          const sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+          sheet["!cols"] = headers.map((header) => ({ wch: Math.min(40, Math.max(18, header.length + 2)) }));
+          for (const address of Object.keys(sheet)) {
+            if (address.startsWith("!")) continue;
+            const cell = sheet[address];
+            const header = headers[XLSX.utils.decode_cell(address).c];
+            if (cell?.t === "n" && header?.includes("(MXN)")) cell.z = '"$"#,##0.00';
+          }
+          XLSX.utils.book_append_sheet(workbook, sheet, name);
+        };
+        appendCommissions("Comisiones promotores", commissions.byPromoter,
+          ["Promotor", "Email", "Tiendas", "Colchones", "Registros con tarifa", "Registros pendientes", "Comisión acumulada (MXN)", "Estado"]);
+        appendCommissions("Comisiones detalle", commissions.detail,
+          ["Fecha", "Ticket", "Promotor", "Email", "Tienda", "SKU", "Modelo", "Tamaño", "Cantidad", "Venta total (MXN)", "Comisión por unidad (MXN)", "Comisión total (MXN)", "Estado"]);
+      }
 
       const fileName = `Reporte_EDVA_${safeFilePart(
         selectedChain
@@ -715,7 +768,7 @@ export default function ReportsPage() {
               setMessage("");
             }}
             className="w-full border border-neutral-300 rounded-lg px-4 py-3"
-            disabled={loading === "catalogs"}
+            disabled={loading === "catalogs" || loading === "excel"}
           >
             <option value="">
               {loading === "catalogs"
@@ -733,6 +786,15 @@ export default function ReportsPage() {
             El Excel se generara solamente con tiendas de {selectedChainLabel}.
           </p>
         </div>
+
+        {selectedChain.trim().toUpperCase() === "SUBURBIA" && (
+          <section className="bg-rose-50 border border-rose-200 rounded-2xl p-6 max-w-4xl mb-8" aria-label="Comisiones Suburbia">
+            <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">Solo administradores</p>
+            <h2 className="text-xl font-bold text-neutral-900 mt-2">Comisiones Suburbia</h2>
+            <p className="text-sm text-neutral-700 mt-3">El Excel de la quincena incluirá la comisión acumulada en Resumen y dos apartados: Comisiones promotores y Comisiones detalle.</p>
+            <p className="text-sm text-neutral-600 mt-2">Tarifa por colchón × cantidad vendida. Las ventas sin tarifa y los registros anteriores sin revisión se mostrarán como pendientes y quedarán fuera del acumulado. El importe es una consulta del catálogo vigente, no un comprobante de pago.</p>
+          </section>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
           <div className="bg-white rounded-lg shadow-md p-8">
