@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { commissionCents, summarizeCommissions, type CommissionRates } from "./suburbia-summary";
+import { commissionCents, saleCommissionCents, summarizeCommissions, type CommissionRates } from "./suburbia-summary";
 import styles from "./SuburbiaSalesOverview.module.css";
 
 export type SuburbiaAdminSale = {
-  id: string; sale_date: string; ticket_number: string; amount: number;
+  id: string; sale_date: string; ticket_number: string; amount: number; quantity: number;
   sku: string | null; model: string | null; size: string | null;
   product_catalog_id: string | null; sku_source: string | null;
   profiles: { name: string; email: string } | null;
@@ -55,10 +55,10 @@ export default function SuburbiaSalesOverview({ sales }: { sales: SuburbiaAdminS
   const summary = summarizeCommissions(visible, rates);
   const selected = visible.find((sale) => sale.id === selectedId);
   const unavailable = loading || Boolean(error);
-  const commissionLabel = (sale: SuburbiaAdminSale) => {
+  const commissionLabel = (sale: SuburbiaAdminSale, total = false) => {
     if (!sale.sku_source) return "Sin revisión histórica";
     if (unavailable) return loading ? "Consultando…" : "No disponible";
-    const cents = commissionCents(sale, rates);
+    const cents = total ? saleCommissionCents(sale, rates) : commissionCents(sale, rates);
     return cents === null ? "Sin comisión definida" : money(cents / 100);
   };
 
@@ -66,7 +66,7 @@ export default function SuburbiaSalesOverview({ sales }: { sales: SuburbiaAdminS
     <div className={styles.metrics} aria-live="polite">
       <div className={styles.metric}><p>Venta del período</p><strong>{money(visible.reduce((sum, sale) => sum + Number(sale.amount || 0), 0))}</strong><small>Según los filtros actuales · MXN</small></div>
       <div className={`${styles.metric} ${styles.highlight}`}><p>Comisión acumulada</p><strong>{unavailable ? loading ? "Consultando…" : "No disponible" : summary.defined === 0 && summary.pending > 0 ? "Por definir" : money(summary.cents / 100)}</strong><small>{unavailable ? "Tarifas del catálogo" : `${summary.defined} con tarifa · ${summary.pending} por revisar`}</small></div>
-      <div className={styles.metric}><p>Registros de venta</p><strong>{visible.length}</strong><small>Dentro del período seleccionado</small></div>
+      <div className={styles.metric}><p>Registros de venta</p><strong>{visible.length}</strong><small>{visible.reduce((sum, sale) => sum + (sale.quantity ?? 1), 0)} colchones · Período seleccionado</small></div>
       <div className={styles.metric}><p>Por revisar</p><strong>{unavailable ? "—" : summary.pending}</strong><small>Sin tarifa o sin revisión histórica</small></div>
     </div>
     {error && <p role="alert" className={styles.error}>{error}<button type="button" onClick={() => setReload((value) => value + 1)}>Reintentar</button></p>}
@@ -76,21 +76,23 @@ export default function SuburbiaSalesOverview({ sales }: { sales: SuburbiaAdminS
         <label>Origen del producto<select value={source} onChange={(event) => setSource(event.target.value)}><option value="all">Todos los registros</option><option value="catalog">Catálogo</option><option value="direct">SKU escrito</option><option value="legacy">Registros anteriores</option></select></label>
       </div>
       <div className={styles.scroll}><table className={styles.table}>
-        <thead><tr><th scope="col">Fecha / Ticket</th><th scope="col">Promotor / Tienda</th><th scope="col">Producto / Tamaño</th><th scope="col">Venta (MXN)</th><th scope="col">Comisión por unidad (MXN)</th></tr></thead>
+        <thead><tr><th scope="col">Fecha / Ticket</th><th scope="col">Promotor / Tienda</th><th scope="col">Producto / Tamaño</th><th scope="col">Cantidad</th><th scope="col">Venta total (MXN)</th><th scope="col">Comisión por unidad (MXN)</th><th scope="col">Comisión total (MXN)</th></tr></thead>
         <tbody>{visible.map((sale) => <tr key={sale.id}>
           <td data-label="Fecha / Ticket"><strong>{sale.sale_date.split("-").reverse().join("/")}</strong><small>Ticket {sale.ticket_number}</small></td>
           <td data-label="Promotor / Tienda"><strong>{sale.profiles?.name || "Sin promotor"}</strong><small>{sale.stores?.name || "Sin tienda"}</small></td>
           <td data-label="Producto / Tamaño"><button type="button" aria-controls="suburbia-sale-detail" onClick={() => { setSelectedId(sale.id); detail.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }}>{sale.model || "Modelo no registrado"}</button><small className={styles.sku}>SKU: {sale.sku || "No registrado"}</small><small>{sale.size || "Tamaño no registrado"}</small><span className={`${styles.badge} ${sale.sku_source === "catalog" ? styles.catalog : ""}`}>{origin(sale)}</span></td>
-          <td data-label="Venta (MXN)" className={styles.money}>{money(Number(sale.amount))}</td>
+          <td data-label="Cantidad" className={styles.money}>{sale.quantity ?? 1}</td>
+          <td data-label="Venta total (MXN)" className={styles.money}>{money(Number(sale.amount))}</td>
           <td data-label="Comisión por unidad (MXN)" className={styles.pending}>{commissionLabel(sale)}</td>
+          <td data-label="Comisión total (MXN)" className={styles.pending}>{commissionLabel(sale, true)}</td>
         </tr>)}</tbody>
       </table>{visible.length === 0 && <p className={styles.empty}>No hay ventas que coincidan con estos filtros.</p>}</div>
-      <p className={styles.note}>{visible.length} registro(s). El acumulado suma una tarifa vigente del catálogo por cada registro con producto identificado. Los registros pendientes y anteriores quedan fuera del cálculo. Este importe no indica comisiones pagadas.</p>
+      <p className={styles.note}>{visible.length} registro(s). El acumulado suma la tarifa vigente del catálogo multiplicada por la cantidad de cada venta con producto identificado. El monto de venta ya incluye todos los colchones del registro. Los registros pendientes y anteriores quedan fuera del cálculo. Este importe no indica comisiones pagadas.</p>
     </section>
     <section ref={detail} id="suburbia-sale-detail" className={`${styles.panel} ${styles.detail}`} aria-live="polite">
       <h2>{selected ? `Detalle del producto · Ticket ${selected.ticket_number}` : "Revisa el producto de cada venta"}</h2>
       <p>{selected ? `${selected.profiles?.name || "Sin promotor"} · ${selected.stores?.name || "Sin tienda"}` : "Selecciona un modelo para consultar su SKU, tamaño y el estado de la comisión."}</p>
-      {selected && <><dl><div><dt>SKU</dt><dd className={styles.sku}>{selected.sku || "No registrado"}</dd></div><div><dt>Modelo</dt><dd>{selected.model || "No registrado"}</dd></div><div><dt>Tamaño</dt><dd>{selected.size || "No registrado"}</dd></div><div><dt>Comisión por unidad</dt><dd>{commissionLabel(selected)}</dd></div></dl><p>{origin(selected)} · Consulta de información registrada.</p><button type="button" onClick={() => setSelectedId(null)}>Cerrar detalle</button></>}
+      {selected && <><dl><div><dt>SKU</dt><dd className={styles.sku}>{selected.sku || "No registrado"}</dd></div><div><dt>Modelo</dt><dd>{selected.model || "No registrado"}</dd></div><div><dt>Tamaño</dt><dd>{selected.size || "No registrado"}</dd></div><div><dt>Cantidad</dt><dd>{selected.quantity ?? 1}</dd></div><div><dt>Comisión total</dt><dd>{commissionLabel(selected, true)}</dd></div><div><dt>Comisión por unidad</dt><dd>{commissionLabel(selected)}</dd></div></dl><p>{origin(selected)} · Consulta de información registrada.</p><button type="button" onClick={() => setSelectedId(null)}>Cerrar detalle</button></>}
     </section>
   </div>;
 }

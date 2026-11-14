@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
-import { findSuburbiaProduct, resolveSuburbiaProduct, SUBURBIA_BRAND, SUBURBIA_CHAIN, type SuburbiaProduct, type SuburbiaSaleInput } from "@/lib/suburbia-products";
+import { findSuburbiaProduct, resolveSuburbiaProduct, parseSaleQuantity, SUBURBIA_BRAND, SUBURBIA_CHAIN, type SuburbiaProduct, type SuburbiaSaleInput } from "@/lib/suburbia-products";
 import styles from "./SuburbiaSaleForm.module.css";
 
 type Store = { id: string; name: string; chain_name: string | null; brand_name: string | null };
@@ -21,6 +21,7 @@ export default function SuburbiaSaleForm({ stores, storeId, onStoreChange, onSav
   const [date, setDate] = useState(() => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
   const [ticket, setTicket] = useState("");
   const [amount, setAmount] = useState("");
+  const [quantity, setQuantity] = useState("1");
   const [error, setError] = useState("");
   const matched = findSuburbiaProduct(products, sku);
   const canEnterDetails = !!sku.trim() && !matched && !catalogLoading && !catalogError;
@@ -44,7 +45,7 @@ export default function SuburbiaSaleForm({ stores, storeId, onStoreChange, onSav
     return () => { cancelled = true; };
   }, [retry]);
 
-  useEffect(() => { setSku(""); setModel(""); setSize(""); setError(""); }, [storeId]);
+  useEffect(() => { setSku(""); setModel(""); setSize(""); setQuantity("1"); setError(""); }, [storeId]);
 
   function updateSku(value: string) {
     const product = findSuburbiaProduct(products, value);
@@ -59,8 +60,9 @@ export default function SuburbiaSaleForm({ stores, storeId, onStoreChange, onSav
     }
     try {
       const product = resolveSuburbiaProduct(products, sku, model, size);
-      const saved = await onSave({ store_id: storeId, sale_date: date, ticket_number: ticket.trim(), amount: Number(amount), ...product });
-      if (saved) { setSku(""); setModel(""); setSize(""); setTicket(""); setAmount(""); }
+      const units = parseSaleQuantity(quantity);
+      const saved = await onSave({ store_id: storeId, sale_date: date, ticket_number: ticket.trim(), amount: Number(amount), quantity: units, ...product });
+      if (saved) { setSku(""); setModel(""); setSize(""); setTicket(""); setAmount(""); setQuantity("1"); }
     } catch (error) { setError(error instanceof Error ? error.message : "No fue posible guardar la venta. Intenta nuevamente."); }
   }
 
@@ -76,9 +78,10 @@ export default function SuburbiaSaleForm({ stores, storeId, onStoreChange, onSav
         <div className={styles.field}><label htmlFor={`${fieldId}-sku`}>SKU *</label><input id={`${fieldId}-sku`} list={`${fieldId}-catalog`} value={sku} onChange={(event) => updateSku(event.target.value)} placeholder="Busca o escribe el SKU completo" autoComplete="off" required aria-describedby={`${fieldId}-help ${fieldId}-status`} /><datalist id={`${fieldId}-catalog`}>{products.map((product) => <option key={product.id} value={product.sku} label={`${product.model} · ${product.size}`} />)}</datalist><p id={`${fieldId}-help`} className={styles.help}>Selecciona un SKU de la cadena. Si no aparece, escríbelo directamente aquí.</p></div>
         <div className={styles.grid}><div className={styles.field}><label htmlFor={`${fieldId}-model`}>Modelo *</label><input id={`${fieldId}-model`} value={matched?.model || model} onChange={(event) => setModel(event.target.value)} readOnly={!canEnterDetails} placeholder="Nombre del modelo" required /></div><div className={styles.field}><label htmlFor={`${fieldId}-size`}>Tamaño *</label><input id={`${fieldId}-size`} value={matched?.size || size} onChange={(event) => setSize(event.target.value)} readOnly={!canEnterDetails} list={`${fieldId}-sizes`} placeholder="Selecciona o escribe el tamaño" required /><datalist id={`${fieldId}-sizes`}>{["Individual", "Matrimonial", "Queen", "King"].map((value) => <option key={value} value={value} />)}</datalist></div></div>
       </div><p id={`${fieldId}-status`} className={styles.status} aria-live="polite">{catalogLoading ? "Cargando catálogo de Suburbia..." : catalogError ? "Catálogo no disponible." : matched ? "Modelo y tamaño completados con el SKU del catálogo." : canEnterDetails ? "Este SKU no aparece en el catálogo. Completa su modelo y tamaño." : "Cada SKU del catálogo tiene su modelo y tamaño definidos."}</p></fieldset>
+      <fieldset className={styles.group} disabled={saving}><legend>Cantidad vendida</legend><div className={styles.field}><label htmlFor={`${fieldId}-quantity`}>Cantidad de colchones *</label><input id={`${fieldId}-quantity`} type="number" inputMode="numeric" min="1" max="2147483647" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} required aria-describedby={`${fieldId}-quantity-help`} /><p id={`${fieldId}-quantity-help`} className={styles.help}>Número de colchones del mismo SKU y tamaño. Si vendiste productos distintos, regístralos por separado.</p></div></fieldset>
       {catalogError && <div className={styles.error} role="alert">{catalogError}<button type="button" onClick={() => setRetry((value) => value + 1)} className={styles.retry}>Volver a cargar catálogo</button></div>}
 
-      <fieldset className={styles.group} disabled={saving}><legend>Ticket e importe</legend><div className={styles.grid}><div className={styles.field}><label htmlFor={`${fieldId}-ticket`}>Número de ticket *</label><input id={`${fieldId}-ticket`} value={ticket} onChange={(event) => setTicket(event.target.value)} placeholder="Número de ticket" required /></div><div className={styles.field}><label htmlFor={`${fieldId}-amount`}>Monto total (MXN) *</label><input id={`${fieldId}-amount`} type="number" inputMode="decimal" step="0.01" min="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></div></div></fieldset>
+      <fieldset className={styles.group} disabled={saving}><legend>Ticket e importe</legend><div className={styles.grid}><div className={styles.field}><label htmlFor={`${fieldId}-ticket`}>Número de ticket *</label><input id={`${fieldId}-ticket`} value={ticket} onChange={(event) => setTicket(event.target.value)} placeholder="Número de ticket" required /></div><div className={styles.field}><label htmlFor={`${fieldId}-amount`}>Monto total de la venta (MXN) *</label><input id={`${fieldId}-amount`} type="number" inputMode="decimal" step="0.01" min="0.01" aria-describedby={`${fieldId}-amount-help`} value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /><p id={`${fieldId}-amount-help`} className={styles.help}>Importe total de todos los colchones capturados en este registro, no el precio por unidad.</p></div></div></fieldset>
       {error && <p className={styles.error} role="alert">{error}</p>}
       <button className={styles.save} type="submit" disabled={saving || catalogLoading || !!catalogError}>{saving ? "Guardando venta..." : "Guardar venta"}</button>
     </form>

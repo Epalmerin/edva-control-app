@@ -15,6 +15,7 @@ type SaleRecord = {
   sku: string | null;
   model: string | null;
   size: string | null;
+  quantity: number;
   product_catalog_id: string | null;
   sku_source: string | null;
   ticket_number: string;
@@ -190,7 +191,7 @@ export default function AdminSalesPage() {
       const [saleRows, storeRows, targetResult, accountResult] = await Promise.all([
         noStores ? Promise.resolve([] as SaleRecord[]) : readAllRows<SaleRecord>(async (from, to) => {
           let query = supabase.from("sales_records").select(`
-            id, employee_id, sale_date, sku, model, size, product_catalog_id, sku_source, ticket_number, amount, created_at, store_id,
+            id, employee_id, sale_date, sku, model, size, quantity, product_catalog_id, sku_source, ticket_number, amount, created_at, store_id,
             profiles:employee_id (name, email),
             stores:store_id (name, chain_name, brand_name)
           `).gte("sale_date", startDate).lte("sale_date", endDate);
@@ -703,7 +704,7 @@ export default function AdminSalesPage() {
                                   {sale.model || "N/A"}
                                 </p>
                                 {sale.stores?.chain_name?.trim().toUpperCase() === "SUBURBIA" && (
-                                  <p className="text-xs text-neutral-400 mt-1">Tamaño: {sale.size || "No registrado"}</p>
+                                  <p className="text-xs text-neutral-400 mt-1">Tamaño: {sale.size || "No registrado"} · Cantidad: {sale.quantity ?? 1}</p>
                                 )}
                               </div>
 

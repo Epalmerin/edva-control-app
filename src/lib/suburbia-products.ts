@@ -18,11 +18,20 @@ export type SuburbiaSaleInput = {
   size: string;
   ticket_number: string;
   amount: number;
+  quantity: number;
   product_catalog_id: string | null;
   sku_source: "catalog" | "direct";
 };
 
 const normalize = (value: string | null | undefined) => (value || "").trim().toUpperCase();
+
+export function parseSaleQuantity(value: string | number): number {
+  const quantity = Number(value);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 2147483647) {
+    throw new Error("La cantidad debe ser un número entero mayor a cero.");
+  }
+  return quantity;
+}
 
 export function isSuburbiaStore(store: { chain_name: string | null; brand_name: string | null } | undefined) {
   return !!store && normalize(store.chain_name) === SUBURBIA_CHAIN && normalize(store.brand_name) === SUBURBIA_BRAND;

@@ -7,7 +7,13 @@ const ts = require('typescript');
 const exportsObject = {};
 const source = fs.readFileSync(path.join(__dirname, '../src/lib/suburbia-products.ts'), 'utf8');
 vm.runInNewContext(ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020}}).outputText, {exports: exportsObject});
-const {isSuburbiaStore, findSuburbiaProduct, resolveSuburbiaProduct} = exportsObject;
+const {isSuburbiaStore, findSuburbiaProduct, resolveSuburbiaProduct, parseSaleQuantity} = exportsObject;
+
+test('quantity requires a positive whole number within the database integer range', () => {
+  assert.equal(parseSaleQuantity('3'), 3);
+  assert.equal(parseSaleQuantity(1), 1);
+  for (const value of ['', '0', '-1', '1.5', 'abc', Infinity, '2147483648']) assert.throws(() => parseSaleQuantity(value));
+});
 const products = [{id:'example-product', chain_name:'SUBURBIA', brand_name:'COLCHONES MASTER', sku:'0000123456789', model:'Example model', size:'Matrimonial'}];
 
 test('catalog is limited to Suburbia and the catalog brand', () => {

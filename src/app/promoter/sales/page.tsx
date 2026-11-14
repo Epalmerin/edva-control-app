@@ -20,6 +20,7 @@ type SaleRecord = {
   sku: string | null;
   model: string | null;
   size: string | null;
+  quantity: number;
   ticket_number: string;
   amount: number;
   created_at: string;
@@ -174,6 +175,7 @@ export default function PromoterSalesPage() {
         sku,
         model,
         size,
+        quantity,
         ticket_number,
         amount,
         created_at,
@@ -898,7 +900,7 @@ export default function PromoterSalesPage() {
                               </p>
 
                               {sale.stores?.chain_name?.trim().toUpperCase() === "SUBURBIA" && (
-                                <p className="text-xs text-neutral-500 mt-1">Tamaño: {sale.size || "No registrado"}</p>
+                                <p className="text-xs text-neutral-500 mt-1">Tamaño: {sale.size || "No registrado"} · Cantidad: {sale.quantity ?? 1}</p>
                               )}
 
                               {storeName === "VARIAS TIENDAS" && (
