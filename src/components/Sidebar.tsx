@@ -149,6 +149,13 @@ export default function Sidebar({
             </Link>
 
             <Link
+              href="/admin/meal-reminders"
+              className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
+            >
+              Avisos de comida
+            </Link>
+
+            <Link
               href="/admin/stores"
               className="bg-neutral-800 hover:bg-neutral-700 transition px-4 py-3 rounded-xl"
             >

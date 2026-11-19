@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 type Account = {
@@ -687,6 +688,7 @@ export default function EmployeesPage() {
           <p className="text-neutral-500 mt-2 mb-8">
             Alta completa de empleados y asignacion operativa por cuenta y tienda.
           </p>
+          <Link href="/admin/meal-reminders" className="inline-block mb-6 rounded-xl bg-red-500 px-4 py-3 text-white font-semibold">Configurar recordatorios de comida</Link>
 
           <section className="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 className="text-xl font-semibold text-neutral-800">

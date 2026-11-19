@@ -4,6 +4,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "EDVA Control App",
   description: "Control operativo EDVA",
+  appleWebApp: { capable: true, title: "EDVA", statusBarStyle: "default" },
+  icons: { apple: "/meal-icon-192.png" },
 };
 
 export const viewport: Viewport = {

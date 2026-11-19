@@ -1,0 +1,68 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const {PGlite}=require(process.env.PGLITE_MODULE || '@electric-sql/pglite');
+const db=await PGlite.create();
+const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
+await db.exec(`CREATE ROLE authenticated; CREATE ROLE anon; CREATE ROLE service_role BYPASSRLS; CREATE SCHEMA auth; CREATE SCHEMA private;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+GRANT USAGE ON SCHEMA auth,private TO authenticated,anon,service_role;
+CREATE TABLE public.profiles(id uuid PRIMARY KEY,role text,active boolean);
+INSERT INTO public.profiles VALUES('${id(1)}','ADMIN',true),('${id(2)}','PROMOTOR',true),('${id(3)}','PROMOTOR',true),('${id(4)}','RH',true),('${id(5)}','PROMOTOR',false);
+CREATE FUNCTION private.current_active_role() RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$SELECT role FROM public.profiles WHERE id=(SELECT auth.uid()) AND active$$;
+CREATE TABLE public.attendance_records(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),employee_id uuid,type text,created_at timestamptz);
+GRANT SELECT ON public.profiles TO authenticated;`);
+await db.exec(fs.readFileSync(new URL('../docs/database/meal-reminders.sql',import.meta.url),'utf8'));
+let checks=0;
+async function asUser(user,fn){await db.exec(`SET ROLE authenticated; SELECT set_config('request.jwt.claim.sub','${id(user)}',false);`);try{return await fn();}finally{await db.exec('RESET ROLE');}}
+const endpoint='https://fcm.googleapis.com/fcm/send/test-one';
+const endpoint2='https://web.push.apple.com/test-two';
+const p256='B'.repeat(87),auth='A'.repeat(22);
+await asUser(1,async()=>{await db.exec(`INSERT INTO public.meal_reminder_settings(employee_id,enabled,remind_at) VALUES('${id(2)}',true,'14:00'),('${id(3)}',false,'14:00');`);checks++;});
+await asUser(2,async()=>{
+ assert.equal((await db.query('SELECT * FROM public.meal_reminder_settings')).rows.length,1);checks++;
+ await assert.rejects(db.exec(`UPDATE public.meal_reminder_settings SET enabled=false WHERE employee_id='${id(3)}' RETURNING *`).then(r=>{if(r[0]?.rows?.length===0)throw Error('RLS blocked');}));checks++;
+ await db.exec(`INSERT INTO public.meal_push_subscriptions(endpoint,employee_id,p256dh,auth) VALUES('${endpoint}','${id(2)}','${p256}','${auth}')`);checks++;
+ await assert.rejects(db.exec(`INSERT INTO public.meal_push_subscriptions(endpoint,employee_id,p256dh,auth) VALUES('${endpoint2}','${id(3)}','${p256}','${auth}')`));checks++;
+ await assert.rejects(db.query('SELECT public.meal_reminder_admin_status()'));checks++;
+ await assert.rejects(db.query('SELECT public.claim_meal_notifications()'));checks++;
+});
+await asUser(3,async()=>{assert.equal((await db.query('SELECT * FROM public.meal_push_subscriptions')).rows.length,0);checks++;});
+await asUser(4,async()=>{assert.equal((await db.query('SELECT * FROM public.meal_reminder_settings')).rows.length,0);await assert.rejects(db.query('SELECT public.meal_reminder_admin_status()'));checks+=2;});
+await assert.rejects(db.exec(`UPDATE public.meal_reminder_settings SET timezone='INVALID' WHERE employee_id='${id(2)}'`));checks++;
+await assert.rejects(db.exec(`UPDATE public.meal_reminder_settings SET weekdays=ARRAY[0] WHERE employee_id='${id(2)}'`));checks++;
+await assert.rejects(db.exec(`UPDATE public.meal_reminder_settings SET weekdays=ARRAY[]::integer[] WHERE employee_id='${id(2)}'`));checks++;
+await assert.rejects(db.exec(`INSERT INTO public.meal_reminder_settings(employee_id,enabled) VALUES('${id(5)}',true)`));checks++;
+const at='2026-11-19T20:00:00Z';
+async function due(instant=at){return (await db.query('SELECT * FROM private.meal_due_candidates($1::timestamptz)',[instant])).rows;}
+assert.equal((await due()).length,0);checks++;
+await db.exec(`INSERT INTO public.attendance_records(employee_id,type,created_at) VALUES('${id(2)}','ENTRY','2026-11-19T15:00:00Z')`);
+assert.equal((await due()).length,1);checks++;
+assert.equal((await due('2026-11-19T19:59:59Z')).length,0);checks++;
+assert.equal((await due('2026-11-19T20:09:59Z')).length,1);checks++;
+assert.equal((await due('2026-11-19T20:10:00Z')).length,0);checks++;
+for(const type of ['BREAK_OUT','BREAK_IN','EXIT']) {
+ await db.exec(`INSERT INTO public.attendance_records(employee_id,type,created_at) VALUES('${id(2)}','${type}','2026-11-19T19:00:00Z')`);
+ assert.equal((await due()).length,0);checks++;
+ await db.exec(`DELETE FROM public.attendance_records WHERE type='${type}'`);
+}
+await db.exec(`UPDATE public.meal_reminder_settings SET weekdays=ARRAY[1] WHERE employee_id='${id(2)}'`);
+assert.equal((await due()).length,0);checks++;
+await db.exec(`UPDATE public.meal_reminder_settings SET weekdays=ARRAY[1,2,3,4,5,6,7],timezone='America/Tijuana',remind_at='12:00' WHERE employee_id='${id(2)}'`);
+assert.equal((await due()).length,1);checks++;
+await db.exec(`UPDATE public.meal_push_subscriptions SET enabled=false WHERE endpoint='${endpoint}'`);
+assert.equal((await due()).length,0);checks++;
+await db.exec(`UPDATE public.meal_push_subscriptions SET enabled=true WHERE endpoint='${endpoint}'; UPDATE public.meal_reminder_settings SET timezone='UTC',remind_at=date_trunc('minute',now() AT TIME ZONE 'UTC')::time WHERE employee_id='${id(2)}'; DELETE FROM public.attendance_records; INSERT INTO public.attendance_records(employee_id,type,created_at) VALUES('${id(2)}','ENTRY',now());`);
+await db.exec('SET ROLE service_role');
+const first=(await db.query('SELECT public.claim_meal_notifications() result')).rows[0].result;
+assert.equal(first.length,1);checks++;
+assert.equal((await db.query('SELECT public.claim_meal_notifications() result')).rows[0].result.length,0);checks++;
+assert.equal((await db.query('SELECT public.meal_notification_still_due($1) ok',[first[0].id])).rows[0].ok,true);checks++;
+await db.query("SELECT public.finish_meal_notification($1,'sent',201)",[first[0].id]);
+assert.equal((await db.query('SELECT public.meal_notification_still_due($1) ok',[first[0].id])).rows[0].ok,false);checks++;
+assert.equal((await db.query('SELECT public.meal_push_test_allowed($1) ok',[endpoint])).rows[0].ok,true);
+assert.equal((await db.query('SELECT public.meal_push_test_allowed($1) ok',[endpoint])).rows[0].ok,false);checks+=2;
+await db.exec('RESET ROLE');
+await asUser(1,async()=>{const status=(await db.query('SELECT * FROM public.meal_reminder_admin_status()')).rows;assert.equal(status.find(s=>s.employee_id===id(2)).devices,1);assert.ok(status.find(s=>s.employee_id===id(2)).last_sent_at);checks++;});
+await db.close();console.log(`${checks} meal reminder checks passed: RLS, local time/day, attendance suppression, expiry window, daily dedupe, test throttle and admin status.`);

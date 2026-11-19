@@ -1,6 +1,7 @@
 import RoleGuard from "@/components/RoleGuard";
 import { APP_ROLES } from "@/lib/access-status";
+import MealNotificationSettings from "@/components/MealNotificationSettings";
 
 export default function PromoterLayout({ children }: { children: React.ReactNode }) {
-  return <RoleGuard allowedRoles={APP_ROLES}>{children}</RoleGuard>;
+  return <RoleGuard allowedRoles={APP_ROLES}><MealNotificationSettings />{children}</RoleGuard>;
 }
