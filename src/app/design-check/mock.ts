@@ -1,1 +1,0 @@
-export const supabase = { from: (_table: string) => ({ select: (_columns: string) => ({ order: (_column: string) => ({ range: async (from: number, _to: number) => ({ data: from ? [] : [{ product_id: "creta", commission_amount: 63.2 }], error: null }) }) }) }) };
