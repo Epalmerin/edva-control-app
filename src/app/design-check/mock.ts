@@ -1,0 +1,1 @@
+export const supabase = { from: () => ({ select: () => ({ order: () => ({ range: async (from: number) => ({ data: from ? [] : [{ product_id: "creta", commission_amount: 63.2 }], error: null }) }) }) }) };

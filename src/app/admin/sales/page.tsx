@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 import SuburbiaSalesOverview from "./SuburbiaSalesOverview";
+import salesStyles from "./SuburbiaSearsSales.module.css";
 import { isSuburbiaStore } from "@/lib/suburbia-products";
 
 type SaleRecord = {
@@ -391,19 +392,113 @@ export default function AdminSalesPage() {
     });
   }, [filteredSales, visibleStores]);
 
-  return (
-    <main className={`min-h-screen flex ${isSuburbiaView ? "bg-gradient-to-br from-rose-50 via-neutral-50 to-white" : "bg-neutral-100"}`}>
-      <Sidebar userName="Eduardo Palmerin" />
+  const sellerFulfillment = (
+<div className="bg-white rounded-2xl shadow-md overflow-hidden mb-8">
+          <div className="px-6 py-5 border-b border-neutral-200">
+            <h2 className="text-xl font-bold text-neutral-900">Cumplimiento por vendedor</h2>
+            <p className="text-sm text-neutral-500 mt-1">
+              {months[selectedMonth - 1]} {selectedYear}
+              {activeAccountId && activeAccountId !== "all" ? ` · ${accountName}` : ""}
+            </p>
+            <p className="text-xs text-neutral-500 mt-2">
+              Venta mensual del vendedor ÷ su meta mensual × 100. Este resumen considera toda
+              la cuenta; los filtros de cadena y marca aplican al concentrado de ventas.
+            </p>
+          </div>
+          {loading ? (
+            <p className="p-6 text-sm text-neutral-500">Cargando cumplimiento...</p>
+          ) : message ? (
+            <p className="p-6 text-sm text-neutral-500">Cumplimiento no disponible. Vuelve a intentar con Actualizar.</p>
+          ) : activeAccountId === "all" ? (
+            <p className="p-6 text-sm text-neutral-600">
+              Selecciona una cuenta específica en el menú lateral para consultar las metas
+              y el cumplimiento de cada vendedor.
+            </p>
+          ) : targetMessage ? (
+            <p role="alert" className="p-6 text-sm text-red-600">{targetMessage} Usa Actualizar para reintentar.</p>
+          ) : (
+            <>
+              {salesWithoutSeller > 0 && (
+                <p className="px-6 py-3 text-sm text-amber-800 bg-amber-50">
+                  Hay {salesWithoutSeller} registro(s) de venta sin vendedor identificado.
+                  Están incluidos en las ventas por tienda, pero no en este cálculo.
+                </p>
+              )}
+              {sellerRanking.length === 0 ? (
+                <p className="p-8 text-center text-neutral-500">No hay ventas ni metas por vendedor para esta cuenta y periodo.</p>
+              ) : (
+                <div className={`overflow-x-auto ${isSuburbiaView ? salesStyles.fulfillment : ""}`}>
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left">Vendedor</th>
+                        <th scope="col" className="px-4 py-3 text-right whitespace-nowrap">Venta mensual</th>
+                        <th scope="col" className="px-4 py-3 text-right whitespace-nowrap">Meta mensual</th>
+                        <th scope="col" className="px-4 py-3 text-left">Cumplimiento</th>
+                        <th scope="col" className="px-6 py-3 text-right">Faltante</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {sellerRanking.map((seller) => {
+                        const achieved = seller.percentage !== null && seller.percentage >= 100;
+                        return (
+                          <tr key={seller.employeeId} className="hover:bg-neutral-50">
+                            <td data-label="Vendedor" className="px-6 py-4 min-w-52">
+                              <p className="font-semibold text-neutral-900">{seller.name}</p>
+                              <p className="text-xs text-neutral-400 mt-1">{seller.email || seller.employeeId}</p>
+                            </td>
+                            <td data-label="Venta mensual" className="px-4 py-4 text-right font-bold text-neutral-900 whitespace-nowrap">{money(seller.sales)}</td>
+                            <td data-label="Meta mensual" className="px-4 py-4 text-right whitespace-nowrap">
+                              {seller.target === null ? <span className="text-neutral-400">Sin meta</span> : money(seller.target)}
+                            </td>
+                            <td data-label="Cumplimiento" className="px-4 py-4 min-w-48">
+                              {seller.percentage === null ? (
+                                <span className="text-xs text-neutral-500">{seller.target === null ? "Sin meta asignada" : "Meta no mayor a cero"}</span>
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between gap-3 mb-2">
+                                    <span className={`font-bold ${achieved ? "text-emerald-600" : "text-neutral-800"}`}>
+                                      {seller.percentage.toLocaleString("es-MX", { maximumFractionDigits: 1 })}%
+                                    </span>
+                                    <span className={`text-xs ${achieved ? "text-emerald-600" : "text-neutral-500"}`}>
+                                      {achieved ? "Meta alcanzada" : "En avance"}
+                                    </span>
+                                  </div>
+                                  <div className="h-2 rounded-full bg-neutral-100 overflow-hidden" aria-hidden="true">
+                                    <div className={`h-full rounded-full ${achieved ? "bg-emerald-500" : "bg-red-500"}`}
+                                      style={{ width: `${Math.max(0, Math.min(seller.percentage, 100))}%` }} />
+                                  </div>
+                                </>
+                              )}
+                            </td>
+                            <td data-label="Faltante" className={`px-6 py-4 text-right font-semibold whitespace-nowrap ${achieved ? "text-emerald-600" : "text-neutral-700"}`}>
+                              {seller.remaining === null ? "—" : money(seller.remaining)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+  );
 
-      <section className="flex-1 min-w-0 p-6 xl:p-8">
+  return (
+    <main className={`min-h-screen flex bg-neutral-100 ${isSuburbiaView ? salesStyles.layout : ""}`}>
+      <Sidebar userName="Eduardo Palmerin" collapsible={isSuburbiaView} />
+
+      <section className={`flex-1 min-w-0 p-6 xl:p-8 ${isSuburbiaView ? salesStyles.content : ""}`}>
         <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-neutral-800">
+            <h1 className={`text-4xl font-bold text-neutral-800 ${isSuburbiaView ? salesStyles.pageTitle : ""}`}>
               {isSuburbiaView ? "Ventas Suburbia" : "Concentrado de ventas"}
             </h1>
 
             <p className="text-neutral-500 mt-2">
-              {isSuburbiaView ? "Consulta la venta, el producto y la tarifa del catálogo en el mismo lugar." : "Vista ejecutiva por cadena, marca, tienda y promotor."}
+              {isSuburbiaView ? "Concentrado por tienda y promotor." : "Vista ejecutiva por cadena, marca, tienda y promotor."}
             </p>
             {isSuburbiaView && <p className="text-xs text-red-700 mt-3 font-semibold">Solo administradores · Importes en MXN</p>}
           </div>
@@ -506,7 +601,7 @@ export default function AdminSalesPage() {
 
         }
 
-        {isSuburbiaView && !loading && !message && <SuburbiaSalesOverview key={`${activeAccountId}-${selectedMonth}-${selectedYear}`} sales={filteredSales} />}
+        {isSuburbiaView && !loading && !message && <SuburbiaSalesOverview key={`${activeAccountId}-${selectedMonth}-${selectedYear}-${selectedChain}-${selectedBrand}`} sales={filteredSales} stores={visibleStores.filter(store => isSuburbiaStore(store) && (selectedBrand === "TODAS" || store.brand_name === selectedBrand))} period={`${months[selectedMonth - 1]} ${selectedYear}`}>{sellerFulfillment}</SuburbiaSalesOverview>}
 
         {loading && (
           <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
@@ -520,97 +615,7 @@ export default function AdminSalesPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl shadow-md overflow-hidden mb-8">
-          <div className="px-6 py-5 border-b border-neutral-200">
-            <h2 className="text-xl font-bold text-neutral-900">Cumplimiento por vendedor</h2>
-            <p className="text-sm text-neutral-500 mt-1">
-              {months[selectedMonth - 1]} {selectedYear}
-              {activeAccountId && activeAccountId !== "all" ? ` · ${accountName}` : ""}
-            </p>
-            <p className="text-xs text-neutral-500 mt-2">
-              Venta mensual del vendedor ÷ su meta mensual × 100. Este resumen considera toda
-              la cuenta; los filtros de cadena y marca aplican al concentrado de ventas.
-            </p>
-          </div>
-          {loading ? (
-            <p className="p-6 text-sm text-neutral-500">Cargando cumplimiento...</p>
-          ) : message ? (
-            <p className="p-6 text-sm text-neutral-500">Cumplimiento no disponible. Vuelve a intentar con Actualizar.</p>
-          ) : activeAccountId === "all" ? (
-            <p className="p-6 text-sm text-neutral-600">
-              Selecciona una cuenta específica en el menú lateral para consultar las metas
-              y el cumplimiento de cada vendedor.
-            </p>
-          ) : targetMessage ? (
-            <p role="alert" className="p-6 text-sm text-red-600">{targetMessage} Usa Actualizar para reintentar.</p>
-          ) : (
-            <>
-              {salesWithoutSeller > 0 && (
-                <p className="px-6 py-3 text-sm text-amber-800 bg-amber-50">
-                  Hay {salesWithoutSeller} registro(s) de venta sin vendedor identificado.
-                  Están incluidos en las ventas por tienda, pero no en este cálculo.
-                </p>
-              )}
-              {sellerRanking.length === 0 ? (
-                <p className="p-8 text-center text-neutral-500">No hay ventas ni metas por vendedor para esta cuenta y periodo.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left">Vendedor</th>
-                        <th scope="col" className="px-4 py-3 text-right whitespace-nowrap">Venta mensual</th>
-                        <th scope="col" className="px-4 py-3 text-right whitespace-nowrap">Meta mensual</th>
-                        <th scope="col" className="px-4 py-3 text-left">Cumplimiento</th>
-                        <th scope="col" className="px-6 py-3 text-right">Faltante</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100">
-                      {sellerRanking.map((seller) => {
-                        const achieved = seller.percentage !== null && seller.percentage >= 100;
-                        return (
-                          <tr key={seller.employeeId} className="hover:bg-neutral-50">
-                            <td className="px-6 py-4 min-w-52">
-                              <p className="font-semibold text-neutral-900">{seller.name}</p>
-                              <p className="text-xs text-neutral-400 mt-1">{seller.email || seller.employeeId}</p>
-                            </td>
-                            <td className="px-4 py-4 text-right font-bold text-neutral-900 whitespace-nowrap">{money(seller.sales)}</td>
-                            <td className="px-4 py-4 text-right whitespace-nowrap">
-                              {seller.target === null ? <span className="text-neutral-400">Sin meta</span> : money(seller.target)}
-                            </td>
-                            <td className="px-4 py-4 min-w-48">
-                              {seller.percentage === null ? (
-                                <span className="text-xs text-neutral-500">{seller.target === null ? "Sin meta asignada" : "Meta no mayor a cero"}</span>
-                              ) : (
-                                <>
-                                  <div className="flex items-center justify-between gap-3 mb-2">
-                                    <span className={`font-bold ${achieved ? "text-emerald-600" : "text-neutral-800"}`}>
-                                      {seller.percentage.toLocaleString("es-MX", { maximumFractionDigits: 1 })}%
-                                    </span>
-                                    <span className={`text-xs ${achieved ? "text-emerald-600" : "text-neutral-500"}`}>
-                                      {achieved ? "Meta alcanzada" : "En avance"}
-                                    </span>
-                                  </div>
-                                  <div className="h-2 rounded-full bg-neutral-100 overflow-hidden" aria-hidden="true">
-                                    <div className={`h-full rounded-full ${achieved ? "bg-emerald-500" : "bg-red-500"}`}
-                                      style={{ width: `${Math.max(0, Math.min(seller.percentage, 100))}%` }} />
-                                  </div>
-                                </>
-                              )}
-                            </td>
-                            <td className={`px-6 py-4 text-right font-semibold whitespace-nowrap ${achieved ? "text-emerald-600" : "text-neutral-700"}`}>
-                              {seller.remaining === null ? "—" : money(seller.remaining)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        {!isSuburbiaView && sellerFulfillment}
 
         {!isSuburbiaView && <div className="bg-white rounded-2xl shadow-md overflow-hidden mb-8">
           <div className="px-6 py-5 border-b border-neutral-200 flex items-center justify-between gap-4">
