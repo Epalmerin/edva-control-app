@@ -1,0 +1,9 @@
+.header { display:none; }
+@media(max-width:767px) {
+ .header { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; background:#171717; color:white; }
+ .header img { width:76px; height:auto; border-radius:5px; background:white; }
+ .header button { border:1px solid #737373; padding:10px 12px; border-radius:8px; font-size:14px; cursor:pointer; }
+ .header button:focus-visible { outline:3px solid #ff6170; outline-offset:3px; }
+ .aside { display:none; width:100%; min-height:0; }
+ .open { display:flex; }
+}

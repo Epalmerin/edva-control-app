@@ -4,16 +4,28 @@ import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import AccountSelector from "@/components/AccountSelector";
+import { useEffect, useId, useState } from "react";
+import navigation from "./SalesSidebar.module.css";
 
 type SidebarProps = {
   userName?: string;
   role?: "ADMIN" | "RH";
+  collapsible?: boolean;
 };
 
 export default function Sidebar({
   userName = "Administrador",
   role = "ADMIN",
+  collapsible = false,
 }: SidebarProps) {
+  const [open, setOpen] = useState(false);
+  const menuId = useId();
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [open]);
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = "/";
@@ -23,7 +35,9 @@ export default function Sidebar({
   const isRH = role === "RH";
 
   return (
-    <aside className="w-72 min-h-screen bg-neutral-900 text-white p-6 flex flex-col">
+    <>
+    {collapsible && <header className={navigation.header}><Image src="/edva-logo.jpeg" alt="EDVA MKT & Publicidad" width={1483} height={1061} sizes="76px" /><button type="button" aria-expanded={open} aria-controls={menuId} onClick={() => setOpen(value => !value)}>{open ? "Cerrar menú ✕" : "Menú ☰"}</button></header>}
+    <aside id={menuId} className={`w-72 min-h-screen bg-neutral-900 text-white p-6 flex flex-col ${collapsible ? `${navigation.aside} ${open ? navigation.open : ""}` : ""}`}>
       {isAdmin ? (
         <div className="mb-10 flex items-center justify-center rounded-xl bg-white p-3">
           <Image
@@ -211,5 +225,6 @@ export default function Sidebar({
         Cerrar sesión
       </button>
     </aside>
+    </>
   );
 }

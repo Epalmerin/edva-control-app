@@ -1,0 +1,86 @@
+.overview { color:#171717; margin-bottom:28px; min-width:0; }
+.metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:24px; }
+.metric,.panel { background:white; border:1px solid #e5e5e5; border-radius:12px; box-shadow:0 2px 6px #00000009; }
+.metric { padding:18px 20px; min-width:0; }
+.metric p { font-size:12px; color:#737373; }
+.metric strong { display:block; color:#ff293d; font-size:clamp(20px,2vw,28px); font-weight:800; line-height:1.3; margin:8px 0; overflow-wrap:anywhere; }
+.metric small { color:#737373; font-size:12px; }
+.panel { overflow:hidden; }
+.heading { padding:20px 24px; display:flex; gap:16px; justify-content:space-between; align-items:center; }
+.heading h2 { font-size:20px; font-weight:700; }
+.heading p { font-size:13px; color:#737373; margin-top:5px; }
+.export { border:1px solid #262626; border-radius:10px; background:white; color:#171717; font-size:14px; font-weight:600; padding:11px 16px; white-space:nowrap; cursor:pointer; }
+.export:disabled { opacity:.5; cursor:default; }
+.toolbar { display:flex; flex-wrap:wrap; gap:12px; padding:0 24px 20px; border-bottom:1px solid #e5e5e5; }
+.toolbar label { flex:1; min-width:150px; font-size:12px; font-weight:600; }
+.toolbar label:first-child { flex:2; }
+.toolbar input,.toolbar select { width:100%; display:block; margin-top:7px; border:1px solid #d4d4d4; border-radius:10px; padding:11px; font-size:14px; font-weight:400; background:white; min-width:0; min-height:44px; }
+.store { border-bottom:1px solid #e5e5e5; }
+.storeSummary { display:grid; grid-template-columns:32px minmax(0,1fr) 100px minmax(110px,150px) 20px; gap:16px; align-items:center; padding:18px 24px; cursor:pointer; list-style:none; }
+.storeSummary::-webkit-details-marker { display:none; }
+.storeSummary:hover { background:#fafafa; }
+.store[open]>.storeSummary { background:#fff3f4; }
+.rank { font-size:13px; font-weight:700; color:#a3a3a3; }
+.storeName { min-width:0; overflow-wrap:anywhere; }
+.storeName strong { font-size:15px; }
+.storeName small,.storeCount small { display:block; color:#737373; font-size:11px; margin-top:4px; }
+.storeCount { text-align:right; font-size:13px; }
+.storeTotal { text-align:right; color:#ff293d; font-size:18px; font-weight:800; overflow-wrap:anywhere; }
+.expand { text-align:right; font-size:21px; color:#737373; }
+.expand::after { content:'+'; }
+.store[open]>.storeSummary .expand::after { content:'−'; }
+.storeBody { padding:16px 24px; background:#fafafa; border-top:1px solid #e5e5e5; }
+.sale { background:white; border:1px solid #e5e5e5; border-radius:12px; padding:16px; margin-bottom:12px; }
+.saleMain { display:grid; grid-template-columns:minmax(0,1fr) minmax(120px,170px); gap:16px; }
+.product { min-width:0; overflow-wrap:anywhere; }
+.product h3 { font-size:15px; font-weight:700; }
+.product p { font-size:13px; color:#737373; line-height:1.6; margin-top:4px; }
+.product .promoter { font-size:14px; font-weight:600; color:#262626; }
+.sku { font-family:ui-monospace,monospace; overflow-wrap:anywhere; }
+.saleAmount { text-align:right; min-width:0; }
+.saleAmount time { font-size:12px; color:#737373; }
+.saleAmount>strong { display:block; color:#ff293d; font-size:22px; font-weight:800; margin:7px 0; overflow-wrap:anywhere; }
+.badge { display:inline-block; padding:4px 8px; font-size:11px; border-radius:7px; }
+.defined { color:#166534; background:#dcfce7; }
+.pending { color:#854d0e; background:#fef3c7; }
+.commissions { display:grid; grid-template-columns:1fr 1fr; gap:16px; border-top:1px solid #e5e5e5; margin-top:14px; padding-top:12px; }
+.commissions p { font-size:12px; color:#737373; }
+.commissions strong { display:block; font-size:14px; color:#262626; margin-top:5px; overflow-wrap:anywhere; }
+.origin { color:#737373; font-size:11px; margin-top:10px; }
+.note { padding:16px 24px; font-size:12px; line-height:1.7; color:#737373; }
+.empty { padding:24px; text-align:center; color:#737373; font-size:14px; }
+.error { margin:12px 0; border:1px solid #fecaca; background:#fff1f2; border-radius:10px; padding:16px; color:#b91c1c; font-size:14px; }
+.error button { text-decoration:underline; margin-left:12px; cursor:pointer; }
+.pagination { display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:center; font-size:13px; padding:12px 0; }
+.pagination button { border:1px solid #d4d4d4; padding:10px 12px; border-radius:8px; background:white; cursor:pointer; }
+.overview button:focus-visible,.overview summary:focus-visible,.overview input:focus-visible,.overview select:focus-visible { outline:3px solid #ff6170; outline-offset:3px; }
+@media(max-width:1100px) { .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .storeSummary { gap:10px; grid-template-columns:24px minmax(0,1fr) 80px 120px 16px; } }
+@media(max-width:767px) {
+ .layout { flex-direction:column; }
+ .content { padding:20px 12px 40px; }
+ .pageTitle { font-size:28px; }
+ .metric { padding:14px; }
+ .metric strong { font-size:22px; }
+ .heading { padding:18px 16px; flex-wrap:wrap; }
+ .toolbar { padding:0 16px 16px; }
+ .toolbar label:first-child { flex-basis:100%; }
+ .toolbar input,.toolbar select { font-size:16px; }
+ .storeSummary { padding:16px; grid-template-columns:24px minmax(0,1fr) 18px; gap:8px; }
+ .storeName { grid-column:2; }
+ .storeCount { grid-column:2; text-align:left; }
+ .storeTotal { grid-column:2; text-align:left; }
+ .expand { grid-column:3; grid-row:1; }
+ .storeBody { padding:12px; }
+ .sale { padding:14px; }
+ .saleMain { grid-template-columns:1fr; gap:10px; }
+ .saleAmount { text-align:left; }
+ .saleAmount>strong { display:inline-block; margin-right:12px; }
+ .saleAmount time { display:block; }
+ .commissions { gap:10px; }
+ .note { padding:16px; }
+ .fulfillment table,.fulfillment tbody,.fulfillment tr,.fulfillment td { display:block; width:100%; }
+ .fulfillment thead { display:none; }
+ .fulfillment tr { padding:14px 16px; border-bottom:1px solid #e5e5e5; }
+ .fulfillment td { min-width:0; padding:7px 0; text-align:left; white-space:normal; overflow-wrap:anywhere; }
+ .fulfillment td::before { content:attr(data-label); display:block; color:#737373; font-size:11px; margin-bottom:4px; }
+}
