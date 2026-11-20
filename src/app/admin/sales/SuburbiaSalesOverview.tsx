@@ -74,8 +74,9 @@ export default function SuburbiaSalesOverview({ sales, stores, period, children 
       map.set(sale.store_id, group);
     }
     return [...map.values()].filter(group => !(search || source !== "all" || commissionState !== "all") || group.sales.length > 0)
+      .map(group => ({ ...group, commission: summarizeCommissions(group.sales, rates) }))
       .sort((a, b) => b.total - a.total || a.store.name.localeCompare(b.store.name, "es"));
-  }, [stores, visible, search, source, commissionState]);
+  }, [stores, visible, search, source, commissionState, rates]);
 
   async function exportExcel() {
     if (unavailable || exporting) return;
@@ -120,7 +121,7 @@ export default function SuburbiaSalesOverview({ sales, stores, period, children 
       </div>
       {exportError && <p role="alert" className={styles.error}>{exportError}</p>}
       <div>{groups.map((group, index) => <details key={group.store.id} className={styles.store}>
-        <summary className={styles.storeSummary}><span className={styles.rank}>#{index + 1}</span><span className={styles.storeName}><strong>{group.store.name}</strong><small>{group.store.chain_name} · {group.store.brand_name}</small></span><span className={styles.storeCount}>{group.units} colchones<small>{group.sales.length} registros</small></span><strong className={styles.storeTotal}>{money(group.total)}</strong><span className={styles.expand} aria-hidden="true" /></summary>
+        <summary className={styles.storeSummary}><span className={styles.rank}>#{index + 1}</span><span className={styles.storeName}><strong>{group.store.name}</strong><small>{group.store.chain_name} · {group.store.brand_name}</small></span><span className={styles.storeCount}>{group.units} colchones<small>{group.sales.length} registros</small></span><span className={styles.storeAmounts}><span><small>Venta total · MXN</small><strong className={styles.storeTotal}>{money(group.total)}</strong></span><span><small>Comisión acumulada · MXN</small><strong className={styles.storeCommission}>{unavailable ? loading ? "Consultando…" : "No disponible" : group.commission.defined === 0 && group.commission.pending > 0 ? "Por definir" : money(group.commission.cents / 100)}</strong>{!unavailable && group.commission.pending > 0 && <small className={styles.storePending}>{group.commission.pending} por revisar · excluidos</small>}</span></span><span className={styles.expand} aria-hidden="true" /></summary>
         <StoreSales sales={group.sales} commissionLabel={commissionLabel} unavailable={unavailable} rates={rates} />
       </details>)}</div>
       {groups.length === 0 && <p className={styles.empty}>No hay ventas que coincidan con estos filtros.</p>}

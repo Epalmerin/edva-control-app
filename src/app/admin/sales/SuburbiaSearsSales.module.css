@@ -16,7 +16,7 @@
 .toolbar label:first-child { flex:2; }
 .toolbar input,.toolbar select { width:100%; display:block; margin-top:7px; border:1px solid #d4d4d4; border-radius:10px; padding:11px; font-size:14px; font-weight:400; background:white; min-width:0; min-height:44px; }
 .store { border-bottom:1px solid #e5e5e5; }
-.storeSummary { display:grid; grid-template-columns:32px minmax(0,1fr) 100px minmax(110px,150px) 20px; gap:16px; align-items:center; padding:18px 24px; cursor:pointer; list-style:none; }
+.storeSummary { display:grid; grid-template-columns:32px minmax(0,1fr) 100px minmax(230px,320px) 20px; gap:16px; align-items:center; padding:18px 24px; cursor:pointer; list-style:none; }
 .storeSummary::-webkit-details-marker { display:none; }
 .storeSummary:hover { background:#fafafa; }
 .store[open]>.storeSummary { background:#fff3f4; }
@@ -26,6 +26,11 @@
 .storeName small,.storeCount small { display:block; color:#737373; font-size:11px; margin-top:4px; }
 .storeCount { text-align:right; font-size:13px; }
 .storeTotal { text-align:right; color:#ff293d; font-size:18px; font-weight:800; overflow-wrap:anywhere; }
+.storeAmounts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; text-align:right; min-width:0; }
+.storeAmounts small { display:block; font-size:11px; color:#737373; margin-bottom:4px; }
+.storeAmounts strong { display:block; }
+.storeCommission { font-size:16px; font-weight:700; color:#262626; overflow-wrap:anywhere; }
+.storeAmounts .storePending { color:#854d0e; margin:4px 0 0; }
 .expand { text-align:right; font-size:21px; color:#737373; }
 .expand::after { content:'+'; }
 .store[open]>.storeSummary .expand::after { content:'−'; }
@@ -54,7 +59,7 @@
 .pagination { display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:center; font-size:13px; padding:12px 0; }
 .pagination button { border:1px solid #d4d4d4; padding:10px 12px; border-radius:8px; background:white; cursor:pointer; }
 .overview button:focus-visible,.overview summary:focus-visible,.overview input:focus-visible,.overview select:focus-visible { outline:3px solid #ff6170; outline-offset:3px; }
-@media(max-width:1100px) { .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .storeSummary { gap:10px; grid-template-columns:24px minmax(0,1fr) 80px 120px 16px; } }
+@media(max-width:1100px) { .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .storeSummary { gap:10px; grid-template-columns:24px minmax(0,1fr) 80px 160px 16px; } .storeAmounts { grid-template-columns:1fr; gap:10px; } }
 @media(max-width:767px) {
  .layout { flex-direction:column; }
  .content { padding:20px 12px 40px; }
@@ -68,7 +73,8 @@
  .storeSummary { padding:16px; grid-template-columns:24px minmax(0,1fr) 18px; gap:8px; }
  .storeName { grid-column:2; }
  .storeCount { grid-column:2; text-align:left; }
- .storeTotal { grid-column:2; text-align:left; }
+ .storeAmounts { grid-column:2; text-align:left; margin-top:6px; }
+ .storeTotal { text-align:left; }
  .expand { grid-column:3; grid-row:1; }
  .storeBody { padding:12px; }
  .sale { padding:14px; }
