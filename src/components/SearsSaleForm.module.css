@@ -1,0 +1,7 @@
+.results { margin:0; padding:0; list-style:none; border:1px solid #eadde2; border-radius:12px; background:#fff; max-height:320px; overflow-y:auto; }
+.results li+li { border-top:1px solid #eadde2; }
+.results button { width:100%; text-align:left; padding:12px 14px; min-height:52px; cursor:pointer; overflow-wrap:anywhere; }
+.results button:hover { background:#fff0f3; }
+.results button:focus-visible { outline:3px solid #cc1f39; outline-offset:-3px; }
+.results strong { display:block; font-size:14px; line-height:1.5; }
+.results span { display:block; font-family:ui-monospace,monospace; font-size:12px; color:#705f69; margin-top:4px; }

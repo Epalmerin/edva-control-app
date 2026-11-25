@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import PromoterBottomNav from "@/components/PromoterBottomNav";
 import { supabase } from "@/lib/supabase";
 import SuburbiaSaleForm from "@/components/SuburbiaSaleForm";
+import SearsSaleForm from "@/components/SearsSaleForm";
+import { isSearsStore, type SearsSaleInput } from "@/lib/sears-products";
 import { isSuburbiaStore, type SuburbiaSaleInput } from "@/lib/suburbia-products";
 import suburbiaStyles from "@/components/SuburbiaSaleForm.module.css";
 
@@ -97,6 +99,9 @@ export default function PromoterSalesPage() {
   const selectedStore = stores.find((store) => store.id === storeId);
   const usesSuburbiaCatalog = isSuburbiaStore(selectedStore) ||
     (!storeId && stores.length > 0 && stores.every(isSuburbiaStore));
+  const usesSearsCatalog = isSearsStore(selectedStore) ||
+    (!storeId && stores.length > 0 && stores.every(isSearsStore));
+  const usesProductCatalog = usesSuburbiaCatalog || usesSearsCatalog;
 
   const money = (value: number) =>
     value.toLocaleString("es-MX", {
@@ -434,11 +439,27 @@ export default function PromoterSalesPage() {
     } finally { setLoading(false); }
   };
 
-  return (
-    <main className={usesSuburbiaCatalog ? suburbiaStyles.page : "min-h-screen bg-neutral-100 p-5 pb-24"}>
-      <div className={usesSuburbiaCatalog ? "max-w-4xl mx-auto space-y-6" : "max-w-md mx-auto space-y-6"}>
+  const handleSaveSearsSale = async (sale: SearsSaleInput): Promise<boolean> => {
+    if (loading) return false;
+    setLoading(true); setMessage("");
+    try {
+      if (sale.store_id !== storeId || !isSearsStore(stores.find(store => store.id === sale.store_id))) throw new Error("Selecciona una tienda Sears para registrar esta venta.");
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session?.user.id) throw new Error("No se encontró sesión activa.");
+      const { error } = await supabase.from("sales_records").insert({ employee_id: sessionData.session.user.id, ...sale });
+      if (error) throw error;
+      setMessage("Venta registrada correctamente."); await loadMonthlySales(); return true;
+    } catch (error) {
+      const detail = error && typeof error === "object" && "message" in error ? String(error.message) : "Intenta nuevamente.";
+      setMessage(`Error al guardar venta: ${detail}`); return false;
+    } finally { setLoading(false); }
+  };
 
-        {!usesSuburbiaCatalog && (<>
+  return (
+    <main className={usesProductCatalog ? suburbiaStyles.page : "min-h-screen bg-neutral-100 p-5 pb-24"}>
+      <div className={usesProductCatalog ? "max-w-4xl mx-auto space-y-6" : "max-w-md mx-auto space-y-6"}>
+
+        {!usesProductCatalog && (<>
         {/* ENCABEZADO */}
         <div className="bg-neutral-900 text-white rounded-3xl p-6 shadow-xl">
           <h1 className="text-3xl font-black">Ventas</h1>
@@ -450,7 +471,12 @@ export default function PromoterSalesPage() {
 
         </>)}
 
-        {usesSuburbiaCatalog ? (
+        {usesSearsCatalog ? (
+          <div>
+            <SearsSaleForm key={`sears-${storeId}`} stores={stores} storeId={storeId} onStoreChange={setStoreId} onSave={handleSaveSearsSale} saving={loading} />
+            {message && <div role="status" className="mt-5 bg-white border border-red-100 rounded-2xl p-4 text-sm font-medium text-neutral-800">{message}</div>}
+          </div>
+        ) : usesSuburbiaCatalog ? (
           <div>
             <SuburbiaSaleForm stores={stores} storeId={storeId} onStoreChange={setStoreId} onSave={handleSaveSuburbiaSale} saving={loading} />
             {message && <div role="status" className="mt-5 bg-white border border-red-100 rounded-2xl p-4 text-sm font-medium text-neutral-800">{message}</div>}
@@ -899,7 +925,7 @@ export default function PromoterSalesPage() {
                                 SKU: {sale.sku || "N/A"}
                               </p>
 
-                              {sale.stores?.chain_name?.trim().toUpperCase() === "SUBURBIA" && (
+                              {["SUBURBIA", "SEARS"].includes(sale.stores?.chain_name?.trim().toUpperCase() || "") && (
                                 <p className="text-xs text-neutral-500 mt-1">Tamaño: {sale.size || "No registrado"} · Cantidad: {sale.quantity ?? 1}</p>
                               )}
 
