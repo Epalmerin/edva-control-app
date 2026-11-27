@@ -1,6 +1,7 @@
 "use client";
 
 import ProtectedFileLink from "@/components/ProtectedFileLink";
+import IncidenceCalendar from "@/components/IncidenceCalendar";
 
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
@@ -173,7 +174,8 @@ export default function AdminIncidencesPage() {
 
       {message&&<div className="mb-4 px-4 py-3 bg-white border border-neutral-200 rounded-xl text-sm text-neutral-700">{message}</div>}
 
-      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-5">
+      <IncidenceCalendar incidences={incidences} loading={loading} scopeLabel={activeAccountName} unavailable={message.startsWith("Error al cargar incidencias")} />
+        <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-5">
         {[["Total",counts.total],["Pend. supervisor",counts.sup],["Pend. RH",counts.rh],["Autorizadas",counts.ok],["Rechazadas",counts.no]].map(([l,v])=>
           <div key={String(l)} className="bg-white border border-neutral-200 rounded-xl px-4 py-4">
             <p className="text-xs font-medium text-neutral-500">{l}</p><p className="text-2xl font-bold text-neutral-900 mt-1">{loading?"—":v}</p>

@@ -1,6 +1,7 @@
 "use client";
 
 import ProtectedFileLink from "@/components/ProtectedFileLink";
+import IncidenceCalendar from "@/components/IncidenceCalendar";
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -471,6 +472,7 @@ export default function SupervisorIncidencesPage() {
           </div>
         )}
 
+        <IncidenceCalendar incidences={incidences} loading={loading} scopeLabel={accountNames.join(" · ") || "Cuentas asignadas"} unavailable={message.startsWith("Error al cargar incidencias")} />
         {/* INDICADORES */}
 
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">

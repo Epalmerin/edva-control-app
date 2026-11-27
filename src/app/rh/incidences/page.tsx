@@ -1,6 +1,7 @@
 "use client";
 
 import ProtectedFileLink from "@/components/ProtectedFileLink";
+import IncidenceCalendar from "@/components/IncidenceCalendar";
 
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
@@ -565,6 +566,7 @@ const [accounts, setAccounts] = useState<
           </div>
         )}
 
+        <IncidenceCalendar incidences={accountIncidences} loading={loading} scopeLabel={accounts.find((account) => account.id === selectedAccount)?.name || "Todas las cuentas"} unavailable={message.startsWith("Error al cargar incidencias")} />
         {/* INDICADORES */}
 
         <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-5">
