@@ -415,7 +415,7 @@ export default function SupervisorIncidencesPage() {
 
   return (
     <main className="min-h-screen bg-neutral-100">
-      <section className="px-6 py-6 xl:px-8 max-w-[1500px] mx-auto">
+      <section className="w-full min-w-0 px-3 py-4 sm:px-4 lg:px-6 xl:px-8 max-w-[1500px] mx-auto">
 
         {/* ENCABEZADO */}
 
@@ -441,7 +441,7 @@ export default function SupervisorIncidencesPage() {
             )}
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
 
             <button
               onClick={() =>
@@ -674,7 +674,7 @@ export default function SupervisorIncidencesPage() {
                                 Motivo
                               </p>
 
-                              <p className="text-sm text-neutral-700 mt-2 whitespace-pre-wrap">
+                              <p className="text-sm text-neutral-700 mt-2 whitespace-pre-wrap break-words">
                                 {incidence.reason ||
                                   "Sin motivo registrado"}
                               </p>
@@ -731,7 +731,7 @@ export default function SupervisorIncidencesPage() {
                                       Comentario
                                     </p>
 
-                                    <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap">
+                                    <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap break-words">
                                       {
                                         incidence.supervisor_comment
                                       }
