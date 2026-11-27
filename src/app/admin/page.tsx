@@ -5,6 +5,7 @@ import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 import { getAttendanceState } from "@/lib/attendance-status";
+import { loadApprovedIncidences, type ApprovedIncidence } from "@/lib/attendance-incidences";
 
 type Assignment = {
   employee_id: string;
@@ -32,6 +33,7 @@ type ChainSummary = {
   reported: number;
   pending: number;
   resting: number;
+  justified: number;
   expected: number;
   coverage: number | null;
 };
@@ -63,6 +65,7 @@ export default function AdminPage() {
   const [incidencesToday, setIncidencesToday] = useState(0);
   const [routeRecordsToday, setRouteRecordsToday] = useState(0);
 
+  const [approvedIncidences, setApprovedIncidences] = useState<ApprovedIncidence[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [attendanceEntries, setAttendanceEntries] = useState<
     AttendanceRecord[]
@@ -85,6 +88,7 @@ export default function AdminPage() {
       setMessage("");
       setAssignments([]);
       setAttendanceEntries([]);
+    setApprovedIncidences([]);
       setActiveAccountName(id === "all" ? "Todas las cuentas" : "Cuenta seleccionada");
       setActiveAccountId(id);
       setAccountChange((value) => value + 1);
@@ -108,6 +112,7 @@ export default function AdminPage() {
     setMessage("");
     setAssignments([]);
     setAttendanceEntries([]);
+    setApprovedIncidences([]);
 
     try {
       const { date, start, end } = getMexicoTodayRange();
@@ -191,13 +196,14 @@ export default function AdminPage() {
       const noEmployees = specificAccount && !employeeIds.length;
       const noStores = specificAccount && !storeIds.length;
       const [attendanceResult, salesResult, incidencesResult, routeRecordsResult,
-        assignmentsResult, entriesResult] = await Promise.all([
+        assignmentsResult, entriesResult, approved] = await Promise.all([
         noEmployees || noStores ? emptyResult : attendanceQuery,
         noStores ? emptyResult : salesQuery,
         noEmployees ? emptyResult : incidencesQuery,
         noEmployees || noStores ? emptyResult : routesQuery,
         !promoterIds.length || noStores ? emptyResult : assignmentsQuery,
         !promoterIds.length || noStores ? emptyResult : entriesQuery,
+        loadApprovedIncidences(date, promoterIds),
       ]);
       for (const result of [attendanceResult, salesResult, incidencesResult,
         routeRecordsResult, assignmentsResult, entriesResult]) {
@@ -207,6 +213,7 @@ export default function AdminPage() {
 
       setActiveAccountName(accountName);
       setOperationDate(date);
+      setApprovedIncidences(approved);
       setEmployees(employeesResult.count || 0);
       setAttendanceToday(attendanceResult.count || 0);
       setSalesToday(salesResult.count || 0);
@@ -243,11 +250,14 @@ export default function AdminPage() {
       .map((record) => record.employee_id));
   }, [attendanceEntries, assignments]);
 
+  const approvedEmployeeIds = useMemo(() => new Set(approvedIncidences.map(row => row.employee_id)), [approvedIncidences]);
+  const justifiedEmployees = useMemo(() => new Set(assignments.filter(item => approvedEmployeeIds.has(item.employee_id) && !reportedEmployees.has(item.employee_id)).map(item => item.employee_id)), [assignments, approvedEmployeeIds, reportedEmployees]);
+
   const restingEmployees = useMemo(() => new Set(assignments
     .filter((item) => getAttendanceState(
-      operationDate, item.profiles?.rest_days, reportedEmployees.has(item.employee_id)
+      operationDate, item.profiles?.rest_days, reportedEmployees.has(item.employee_id), approvedEmployeeIds.has(item.employee_id)
     ) === "rest")
-    .map((item) => item.employee_id)), [assignments, operationDate, reportedEmployees]);
+    .map((item) => item.employee_id)), [assignments, operationDate, reportedEmployees, approvedEmployeeIds]);
 
   const chainSummaries = useMemo<ChainSummary[]>(() => {
     const map = new Map<
@@ -257,6 +267,7 @@ export default function AdminPage() {
         employeeIds: Set<string>;
         reportedIds: Set<string>;
         restingIds: Set<string>;
+        justifiedIds: Set<string>;
       }
     >();
 
@@ -269,6 +280,7 @@ export default function AdminPage() {
           employeeIds: new Set<string>(),
           reportedIds: new Set<string>(),
           restingIds: new Set<string>(),
+          justifiedIds: new Set<string>(),
         });
       }
 
@@ -280,11 +292,13 @@ export default function AdminPage() {
         record.employee_id === assignment.employee_id &&
         (record.stores?.chain_name || "Sin cadena") === chain
       );
-      const state = getAttendanceState(operationDate, assignment.profiles?.rest_days, hasEntry);
+      const state = getAttendanceState(operationDate, assignment.profiles?.rest_days, hasEntry, approvedEmployeeIds.has(assignment.employee_id));
       if (state === "reported") {
         item.reportedIds.add(assignment.employee_id);
       } else if (state === "rest") {
         item.restingIds.add(assignment.employee_id);
+      } else if (state === "justified") {
+        item.justifiedIds.add(assignment.employee_id);
       }
     });
 
@@ -293,7 +307,8 @@ export default function AdminPage() {
         const total = item.employeeIds.size;
         const reported = item.reportedIds.size;
         const resting = item.restingIds.size;
-        const expected = total - resting;
+        const justified = item.justifiedIds.size;
+        const expected = total - resting - justified;
         const pending = Math.max(expected - reported, 0);
 
         return {
@@ -302,12 +317,13 @@ export default function AdminPage() {
           reported,
           pending,
           resting,
+          justified,
           expected,
           coverage: expected > 0 ? Math.round((reported / expected) * 100) : null,
         };
       })
       .sort((a, b) => b.pending - a.pending);
-  }, [assignments, attendanceEntries, operationDate]);
+  }, [assignments, attendanceEntries, operationDate, approvedEmployeeIds]);
 
   const activePromoters = new Set(
     assignments.map((assignment) => assignment.employee_id)
@@ -315,7 +331,8 @@ export default function AdminPage() {
 
   const reportedPromoters = reportedEmployees.size;
   const restingPromoters = restingEmployees.size;
-  const expectedPromoters = activePromoters - restingPromoters;
+  const justifiedPromoters = justifiedEmployees.size;
+  const expectedPromoters = activePromoters - restingPromoters - justifiedPromoters;
   const pendingPromoters = Math.max(expectedPromoters - reportedPromoters, 0);
 
   const attendanceCoverage =
@@ -411,6 +428,10 @@ export default function AdminPage() {
           </div>
 
           <div className="bg-white rounded-2xl p-6 shadow-md">
+            <p className="text-neutral-500 text-sm">Ausencias justificadas</p>
+            <p className="text-4xl font-black text-indigo-700 mt-3">{loading ? "..." : message ? "—" : justifiedPromoters}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-6 shadow-md">
             <p className="text-neutral-500 text-sm">Pendientes</p>
             <p className="text-4xl font-black text-red-500 mt-3">
               {loading ? "..." : message ? "—" : pendingPromoters}
@@ -437,7 +458,7 @@ export default function AdminPage() {
                 </h2>
 
                 <p className="text-sm text-neutral-500 mt-1">
-                  Cobertura por promotores únicos con entrada esperada; se excluyen quienes descansan sin registrar entrada.
+                  Cobertura por promotores únicos con entrada esperada; se excluyen descansos e incidencias autorizadas sin entrada.
                 </p>
               </div>
 
@@ -457,6 +478,7 @@ export default function AdminPage() {
                     <th className="py-3 text-center">Promotores</th>
                     <th className="py-3 text-center">Presentes</th>
                     <th className="py-3 text-center">En descanso</th>
+                    <th className="py-3 text-center">Justificadas</th>
                     <th className="py-3 text-center">Pendientes</th>
                     <th className="py-3 text-center">Cobertura</th>
                   </tr>
@@ -464,7 +486,7 @@ export default function AdminPage() {
 
                 <tbody>
                   {(loading || message || chainSummaries.length === 0) && (
-                    <tr><td colSpan={6} className="py-4 text-neutral-500">
+                    <tr><td colSpan={7} className="py-4 text-neutral-500">
                       {loading ? "Cargando..." : message ? "Datos no disponibles." : "No hay promotores con asignaciones activas en esta cuenta."}
                     </td></tr>
                   )}
@@ -484,6 +506,7 @@ export default function AdminPage() {
                         {chain.resting}
                       </td>
 
+                      <td className="py-4 text-center text-indigo-700 font-bold">{chain.justified}</td>
                       <td className="py-4 text-center text-red-500 font-bold">
                         {chain.pending}
                       </td>
