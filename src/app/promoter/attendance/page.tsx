@@ -2,7 +2,8 @@
 
 import { storedFileReference } from "@/lib/storage-files";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { loadApprovedIncidences, approvedIncidenceLabels, type ApprovedIncidence } from "@/lib/attendance-incidences";
 import { supabase } from "@/lib/supabase";
 
 type AssignedStore = {
@@ -150,6 +151,27 @@ function compressImage(file: File): Promise<File> {
 }
 
 export default function AttendancePage() {
+  const [approvedToday, setApprovedToday] = useState<ApprovedIncidence[]>([]);
+  const [incidenceError, setIncidenceError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    async function refreshIncidences() {
+      try {
+        const {data, error} = await supabase.auth.getUser();
+        if (error || !data.user) throw new Error("Sesión no disponible");
+        const date = new Intl.DateTimeFormat("en-CA", {timeZone:"America/Mexico_City",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+        const part = (type:string) => date.find(p => p.type === type)?.value || "";
+        const rows = await loadApprovedIncidences(part("year")+"-"+part("month")+"-"+part("day"), [data.user.id]);
+        if (!cancelled) {setApprovedToday(rows); setIncidenceError(false);}
+      } catch {
+        if (!cancelled) {setApprovedToday([]); setIncidenceError(true);}
+      }
+    }
+    void refreshIncidences();
+    const refresh = () => { if (document.visibilityState === "visible") void refreshIncidences(); };
+    document.addEventListener("visibilitychange", refresh);
+    return () => {cancelled = true; document.removeEventListener("visibilitychange",refresh);};
+  }, []);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -450,6 +472,13 @@ Siguiente registro permitido: ${labels[expectedType]}`
           Registro de entrada, comida y salida.
         </p>
 
+        {approvedToday.length > 0 && (
+          <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-900">
+            <p className="font-semibold">{approvedIncidenceLabels(approvedToday)}</p>
+            <p className="mt-1 text-sm">Tienes una incidencia autorizada para hoy. No necesitas registrar entrada por esta ausencia. Si trabajas, registra tu asistencia real normalmente.</p>
+          </div>
+        )}
+        {incidenceError && <p className="mb-4 text-sm text-neutral-600">No fue posible consultar tus incidencias de hoy. Puedes seguir registrando asistencia.</p>}
         <div className="bg-white rounded-2xl shadow-md p-6">
           <h2 className="text-xl font-semibold text-neutral-800 mb-6">
             Validación GPS

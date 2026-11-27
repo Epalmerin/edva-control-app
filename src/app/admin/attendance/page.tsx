@@ -2,10 +2,11 @@
 
 import ProtectedFileLink from "@/components/ProtectedFileLink";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
 import { getAttendanceState, type AttendanceState } from "@/lib/attendance-status";
+import { loadApprovedIncidences, groupApprovedIncidences, approvedIncidenceLabels, type ApprovedIncidence } from "@/lib/attendance-incidences";
 
 type AttendanceRecord = {
   id: string;
@@ -58,6 +59,7 @@ type PromoterRow = {
   lastRecord: AttendanceRecord | null;
   hasEntry: boolean;
   attendanceState: AttendanceState;
+  approvedIncidences: ApprovedIncidence[];
 };
 
 const labels: Record<string, string> = {
@@ -126,6 +128,8 @@ function formatDisplayDate(date: string) {
 
 export default function AdminAttendancePage() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [approvedIncidences, setApprovedIncidences] = useState<ApprovedIncidence[]>([]);
+  const requestId = useRef(0);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -139,6 +143,8 @@ export default function AdminAttendancePage() {
 
   useEffect(() => {
     const resolveAccount = async (accountId: string) => {
+      requestId.current += 1;
+      setLoading(true);
       setActiveAccountId(accountId);
 
       if (accountId === "all") {
@@ -171,13 +177,17 @@ export default function AdminAttendancePage() {
   }, []);
 
   const loadData = async () => {
-    if (!activeAccountId) return;
-
+    if (!activeAccountId || !selectedDate) return;
+    const request = ++requestId.current;
     setLoading(true);
     setMessage("");
     setExpandedEmployee(null);
+    setRecords([]); setEmployees([]); setStores([]); setAssignments([]); setApprovedIncidences([]);
 
     try {
+      let nextEmployees: Employee[] = [];
+      let nextStores: Store[] = [];
+      let nextAssignments: Assignment[] = [];
       let employeeIds: string[] = [];
       let storeIds: string[] = [];
 
@@ -204,8 +214,8 @@ export default function AdminAttendancePage() {
         employeeIds = loadedEmployees.map((employee) => employee.id);
         storeIds = loadedStores.map((store) => store.id);
 
-        setEmployees(loadedEmployees);
-        setStores(loadedStores);
+        nextEmployees = loadedEmployees;
+        nextStores = loadedStores;
       } else {
         const [{ data: accountEmployees, error: accountEmployeesError }, { data: accountStores, error: accountStoresError }] =
           await Promise.all([
@@ -236,9 +246,9 @@ export default function AdminAttendancePage() {
             .order("name");
 
           if (employeeError) throw employeeError;
-          setEmployees((employeeData || []) as Employee[]);
+          nextEmployees = (employeeData || []) as Employee[];
         } else {
-          setEmployees([]);
+          nextEmployees = [];
         }
 
         if (storeIds.length > 0) {
@@ -249,9 +259,9 @@ export default function AdminAttendancePage() {
             .order("name");
 
           if (storeError) throw storeError;
-          setStores((storeData || []) as Store[]);
+          nextStores = (storeData || []) as Store[];
         } else {
-          setStores([]);
+          nextStores = [];
         }
       }
 
@@ -264,9 +274,9 @@ export default function AdminAttendancePage() {
           .in("store_id", storeIds);
 
         if (assignmentError) throw assignmentError;
-        setAssignments((assignmentData || []) as Assignment[]);
+        nextAssignments = (assignmentData || []) as Assignment[];
       } else {
-        setAssignments([]);
+        nextAssignments = [];
       }
 
       const { start, end } = getMexicoDateRange(selectedDate);
@@ -298,8 +308,11 @@ export default function AdminAttendancePage() {
 
       if (activeAccountId !== "all") {
         if (employeeIds.length === 0 || storeIds.length === 0) {
+          if (request !== requestId.current) return;
+          const approved = await loadApprovedIncidences(selectedDate, nextEmployees.map(e => e.id));
+          if (request !== requestId.current) return;
+          setEmployees(nextEmployees); setStores(nextStores); setAssignments(nextAssignments); setApprovedIncidences(approved);
           setRecords([]);
-          setLoading(false);
           return;
         }
 
@@ -308,9 +321,12 @@ export default function AdminAttendancePage() {
           .in("store_id", storeIds);
       }
 
-      const { data: attendanceData, error: attendanceError } = await attendanceQuery;
-
+      const [{ data: attendanceData, error: attendanceError }, approved] = await Promise.all([
+        attendanceQuery, loadApprovedIncidences(selectedDate, nextEmployees.map(e => e.id)),
+      ]);
       if (attendanceError) throw attendanceError;
+      if (request !== requestId.current) return;
+      setEmployees(nextEmployees); setStores(nextStores); setAssignments(nextAssignments); setApprovedIncidences(approved);
 
       setRecords(
         (attendanceData || []).map((record: any) => ({
@@ -324,17 +340,21 @@ export default function AdminAttendancePage() {
         }))
       );
     } catch (error: any) {
+      if (request !== requestId.current) return;
       console.error("Error al cargar asistencia:", error);
       setMessage(`Error al cargar asistencia: ${error.message || "Error desconocido"}`);
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     if (!activeAccountId) return;
     loadData();
+    return () => { requestId.current += 1; };
   }, [activeAccountId, selectedDate]);
+
+  const incidencesByEmployee = useMemo(() => groupApprovedIncidences(approvedIncidences), [approvedIncidences]);
 
   const storesById = useMemo(
     () => new Map(stores.map((store) => [store.id, store])),
@@ -380,7 +400,8 @@ export default function AdminAttendancePage() {
           records: employeeRecords,
           lastRecord,
           hasEntry,
-          attendanceState: getAttendanceState(selectedDate, employee.rest_days, hasEntry),
+          approvedIncidences: incidencesByEmployee.get(employee.id) || [],
+          attendanceState: getAttendanceState(selectedDate, employee.rest_days, hasEntry, incidencesByEmployee.has(employee.id)),
         };
       })
       .sort((a, b) => {
@@ -388,7 +409,7 @@ export default function AdminAttendancePage() {
         if (storeCompare !== 0) return storeCompare;
         return a.employee.name.localeCompare(b.employee.name);
       });
-  }, [employees, records, storesById, primaryStoreByEmployee, selectedDate]);
+  }, [employees, records, storesById, primaryStoreByEmployee, selectedDate, incidencesByEmployee]);
 
   const reportedRows = useMemo(
     () => promoterRows.filter((row) => row.hasEntry),
@@ -404,6 +425,8 @@ export default function AdminAttendancePage() {
     () => promoterRows.filter((row) => row.attendanceState === "rest"),
     [promoterRows]
   );
+
+  const justifiedRows = useMemo(() => promoterRows.filter(row => row.attendanceState === "justified"), [promoterRows]);
 
   const inBreak = useMemo(
     () =>
@@ -454,7 +477,7 @@ export default function AdminAttendancePage() {
               <input
                 type="date"
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={(e) => { if (e.target.value) { requestId.current += 1; setLoading(true); setSelectedDate(e.target.value); } }}
                 className="h-10 px-3 bg-white border border-neutral-200 rounded-lg text-sm outline-none focus:border-neutral-400"
               />
             </div>
@@ -475,14 +498,14 @@ export default function AdminAttendancePage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-5">
+        <div className="grid grid-cols-2 xl:grid-cols-6 gap-3 mb-5">
           <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4">
             <p className="text-xs font-medium text-neutral-500">Presentes</p>
             <p className="text-2xl font-bold text-neutral-900 mt-1">
-              {loading ? "—" : reportedRows.length}
+              {loading || message ? "—" : reportedRows.length}
             </p>
             <p className="text-xs text-neutral-400 mt-1">
-              de {reportedRows.length + pendingRows.length} con entrada esperada
+              de {loading || message ? "—" : reportedRows.length + pendingRows.length} con entrada esperada
             </p>
           </div>
 
@@ -496,7 +519,7 @@ export default function AdminAttendancePage() {
                   Faltan por reportar
                 </p>
                 <p className="text-2xl font-bold text-red-500 mt-1">
-                  {loading ? "—" : pendingRows.length}
+                  {loading || message ? "—" : pendingRows.length}
                 </p>
               </div>
               <span className="text-xs text-neutral-400 mt-1">
@@ -508,15 +531,21 @@ export default function AdminAttendancePage() {
           <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4">
             <p className="text-xs font-medium text-neutral-500">En descanso</p>
             <p className="text-2xl font-bold text-blue-600 mt-1">
-              {loading ? "—" : restingRows.length}
+              {loading || message ? "—" : restingRows.length}
             </p>
+            <p className="text-xs text-neutral-400 mt-1">Sin entrada requerida</p>
+          </div>
+
+          <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4">
+            <p className="text-xs font-medium text-neutral-500">Ausencias justificadas</p>
+            <p className="text-2xl font-bold text-indigo-700 mt-1">{loading || message ? "—" : justifiedRows.length}</p>
             <p className="text-xs text-neutral-400 mt-1">Sin entrada requerida</p>
           </div>
 
           <div className="bg-white border border-neutral-200 rounded-xl px-4 py-4">
             <p className="text-xs font-medium text-neutral-500">En comida</p>
             <p className="text-2xl font-bold text-neutral-900 mt-1">
-              {loading ? "—" : inBreak}
+              {loading || message ? "—" : inBreak}
             </p>
           </div>
 
@@ -525,12 +554,27 @@ export default function AdminAttendancePage() {
               Jornada completa
             </p>
             <p className="text-2xl font-bold text-neutral-900 mt-1">
-              {loading ? "—" : completed}
+              {loading || message ? "—" : completed}
             </p>
           </div>
         </div>
 
-        {!loading && showPending && (
+        {!loading && !message && justifiedRows.length > 0 && (
+          <div className="bg-white border border-neutral-200 rounded-xl mb-5 overflow-hidden">
+            <div className="px-4 py-3 border-b border-neutral-100">
+              <h2 className="text-sm font-bold text-neutral-900">Ausencias justificadas · {justifiedRows.length}</h2>
+              <p className="text-xs text-neutral-500">Incidencias autorizadas por Supervisor y RH. No requieren entrada.</p>
+            </div>
+            <div className="divide-y divide-neutral-100">{justifiedRows.map(row => (
+              <div key={row.employee.id} className="px-4 py-3 flex flex-wrap justify-between gap-2">
+                <div><p className="text-sm font-semibold text-neutral-800">{row.employee.name}</p><p className="text-xs text-neutral-500">{row.store?.name || "Sin tienda asignada"}</p></div>
+                <span className="text-sm font-medium text-indigo-700">{approvedIncidenceLabels(row.approvedIncidences)}</span>
+              </div>
+            ))}</div>
+          </div>
+        )}
+
+        {!loading && !message && showPending && (
           <div className="bg-white border border-neutral-200 rounded-xl mb-5 overflow-hidden">
             <div className="px-4 py-3 border-b border-neutral-100 flex items-center justify-between">
               <div>
@@ -538,7 +582,7 @@ export default function AdminAttendancePage() {
                   Pendientes por reportar
                 </h2>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  Sin entrada registrada; se excluyen los descansos configurados. Esto no confirma una falta.
+                  Sin entrada registrada; se excluyen los descansos y las incidencias autorizadas. Esto no confirma una falta.
                 </p>
               </div>
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-600">
@@ -575,7 +619,7 @@ export default function AdminAttendancePage() {
           </div>
         )}
 
-        {!loading && restingRows.length > 0 && (
+        {!loading && !message && restingRows.length > 0 && (
           <div className="bg-white border border-neutral-200 rounded-xl mb-5 overflow-hidden">
             <div className="px-4 py-3 border-b border-neutral-100 flex items-center justify-between">
               <div>
@@ -620,6 +664,8 @@ export default function AdminAttendancePage() {
             <div className="px-4 py-8 text-sm text-neutral-500">
               Cargando asistencia...
             </div>
+          ) : message ? (
+            <div className="px-4 py-8 text-sm text-neutral-500">No fue posible confirmar la asistencia. Actualiza los datos.</div>
           ) : reportedRows.length === 0 ? (
             <div className="px-4 py-8 text-sm text-neutral-500">
               No hay entradas registradas para esta fecha.
