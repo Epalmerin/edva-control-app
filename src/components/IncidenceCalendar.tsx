@@ -135,7 +135,7 @@ export default function IncidenceCalendar({
   }
 
   return (
-    <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-3 sm:p-5">
+    <section className="mb-5 min-w-0 rounded-2xl border border-neutral-200 bg-white p-2 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-neutral-900">Calendario de incidencias</h2>
@@ -149,9 +149,9 @@ export default function IncidenceCalendar({
       {open && (
         <>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex w-full min-w-0 flex-wrap items-center justify-center gap-1 sm:w-auto sm:gap-2">
               <button type="button" onClick={() => navigate(-1)} aria-label="Mes anterior" className="rounded-lg border px-3 py-2">‹</button>
-              <h3 className="min-w-[130px] text-center font-semibold capitalize text-neutral-800">{monthTitle}</h3>
+              <h3 className="min-w-0 flex-1 text-center text-sm sm:min-w-[130px] sm:text-base font-semibold capitalize text-neutral-800">{monthTitle}</h3>
               <button type="button" onClick={() => navigate(1)} aria-label="Mes siguiente" className="rounded-lg border px-3 py-2">›</button>
               <button type="button" onClick={goToday} className="rounded-lg border px-3 py-2 text-sm">Hoy</button>
             </div>
@@ -159,7 +159,7 @@ export default function IncidenceCalendar({
           </div>
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <label className="text-xs font-medium text-neutral-600">Estado
-              <select value={status} onChange={(e) => setStatus(e.target.value as CalendarFilter)} className="mt-1 block w-full rounded-lg border border-neutral-300 p-2 text-sm">
+              <select value={status} onChange={(e) => setStatus(e.target.value as CalendarFilter)} className="mt-1 block w-full min-w-0 max-w-full rounded-lg border border-neutral-300 p-2 text-sm">
                 <option value="OPERATIONAL">Autorizadas y pendientes</option>
                 <option value="APPROVED">Solo autorizadas</option>
                 <option value="PENDING">Solo pendientes</option>
@@ -168,13 +168,13 @@ export default function IncidenceCalendar({
               </select>
             </label>
             <label className="text-xs font-medium text-neutral-600">Tipo
-              <select value={type} onChange={(e) => setType(e.target.value)} className="mt-1 block w-full rounded-lg border border-neutral-300 p-2 text-sm">
+              <select value={type} onChange={(e) => setType(e.target.value)} className="mt-1 block w-full min-w-0 max-w-full rounded-lg border border-neutral-300 p-2 text-sm">
                 <option value="ALL">Todos los tipos</option>
                 {Object.entries(typeLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
               </select>
             </label>
             <label className="text-xs font-medium text-neutral-600">Promotor
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre" className="mt-1 block w-full rounded-lg border border-neutral-300 p-2 text-sm" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre" className="mt-1 block w-full min-w-0 max-w-full rounded-lg border border-neutral-300 p-2 text-sm" />
             </label>
           </div>
           <div className="mt-4 flex flex-wrap gap-2 text-xs">
@@ -186,7 +186,7 @@ export default function IncidenceCalendar({
             <p role="alert" className="mt-4 text-sm text-red-700">No fue posible confirmar los datos del calendario. Actualiza las incidencias.</p>
           ) : (
             <>
-              <div className="mt-3 grid grid-cols-7 gap-1" aria-label={"Calendario de " + monthTitle}>
+              <div className="mt-3 grid grid-cols-7 gap-0.5 sm:gap-1" aria-label={"Calendario de " + monthTitle}>
                 {weekdays.map((day) => <div key={day} className="py-1 text-center text-xs font-semibold text-neutral-500">{day}</div>)}
                 {Array.from({ length: cells }, (_, index) => {
                   const day = index - offset + 1;
@@ -200,12 +200,12 @@ export default function IncidenceCalendar({
                     <button key={key} type="button" onClick={() => setSelectedDay(key)}
                       aria-pressed={selectedDay === key} aria-current={today === key ? "date" : undefined}
                       aria-label={formatDate(key) + ", " + approved.length + " autorizadas, " + pending + " pendientes, " + rejected + " rechazadas"}
-                      className={"min-h-[65px] min-w-0 rounded-lg border p-1 text-left align-top sm:min-h-24 sm:p-2 " + (selectedDay === key ? "border-neutral-800 ring-1 ring-neutral-800" : "border-neutral-200 hover:bg-neutral-50")}>
+                      className={"min-h-[60px] min-w-0 rounded-md border p-0.5 text-left align-top sm:min-h-24 sm:p-2 " + (selectedDay === key ? "border-neutral-800 ring-1 ring-neutral-800" : "border-neutral-200 hover:bg-neutral-50")}>
                       <span className={"block text-xs font-semibold " + (today === key ? "text-red-600" : "text-neutral-800")}>{day}</span>
-                      <div className="mt-1 flex flex-wrap gap-1">
+                      <div className="mt-1 flex flex-col items-start gap-0.5 sm:flex-row sm:flex-wrap sm:gap-1">
                         {Object.entries(typeLabels).map(([kind]) => {
                           const count = approved.filter((item) => item.type === kind).length;
-                          return count ? <span key={kind} title={typeLabels[kind] + " autorizadas"} className={"rounded px-1 text-xs font-semibold " + typeStyles[kind]}>{count}<span className="hidden lg:inline"> {kind === "VACATION" ? "Vac." : kind === "PERMISSION" ? "Perm." : "Inc."}</span></span> : null;
+                          return count ? <span key={kind} title={typeLabels[kind] + " autorizadas"} className={"rounded px-0.5 text-[10px] sm:px-1 sm:text-xs font-semibold " + typeStyles[kind]}>{count}<span className="hidden lg:inline"> {kind === "VACATION" ? "Vac." : kind === "PERMISSION" ? "Perm." : "Inc."}</span></span> : null;
                         })}
                         {approved.filter((item) => !typeLabels[item.type]).length > 0 && <span className="rounded bg-neutral-100 px-1 text-xs text-neutral-700">{approved.filter((item) => !typeLabels[item.type]).length} A</span>}
                         {pending > 0 && <span className="rounded bg-amber-100 px-1 text-xs font-semibold text-amber-800">{pending} P</span>}
@@ -215,7 +215,7 @@ export default function IncidenceCalendar({
                   );
                 })}
               </div>
-              <div className="mt-4 rounded-xl border border-neutral-200 p-3 sm:p-4" aria-live="polite">
+              <div className="mt-4 min-w-0 rounded-xl border border-neutral-200 p-2 sm:p-4" aria-live="polite">
                 <h3 className="font-semibold capitalize text-neutral-800">{formatDate(selectedDay)}</h3>
                 <p className="mt-1 text-xs text-neutral-500">{selectedItems.length} solicitudes · {new Set(selectedItems.filter((item) => stateOf(item) === "APPROVED").map((item) => item.employee_id)).size} promotores con ausencia autorizada</p>
                 {selectedItems.length === 0 ? <p className="mt-3 text-sm text-neutral-500">No hay incidencias con estos filtros para este día.</p> : (

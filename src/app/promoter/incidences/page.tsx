@@ -202,9 +202,9 @@ export default function PromoterIncidencesPage() {
   };
 
   return (
-    <main className="min-h-screen bg-neutral-100 p-6">
+    <main className="min-h-screen bg-neutral-100 p-3 sm:p-6">
       <div className="max-w-3xl mx-auto">
-        <h1 className="text-4xl font-bold text-neutral-800">
+        <h1 className="text-2xl sm:text-4xl font-bold text-neutral-800">
           Incidencias
         </h1>
 
@@ -212,14 +212,14 @@ export default function PromoterIncidencesPage() {
           Solicita vacaciones, permisos o incapacidades y consulta el estado de tus solicitudes.
         </p>
 
-        <div className="bg-white rounded-2xl shadow-md p-6">
+        <div className="bg-white rounded-2xl shadow-md p-3 sm:p-6 min-w-0">
           <form onSubmit={handleSaveIncidence} className="space-y-5">
             <div>
               <label className="text-sm font-medium text-neutral-700">
                 Tipo de incidencia
               </label>
               <select
-                className="w-full mt-1 px-4 py-3 border rounded-xl"
+                className="w-full min-w-0 max-w-full mt-1 px-3 sm:px-4 py-3 border rounded-xl"
                 value={type}
                 onChange={(e) => setType(e.target.value)}
                 required
@@ -237,7 +237,7 @@ export default function PromoterIncidencesPage() {
               </label>
               <input
                 type="date"
-                className="w-full mt-1 px-4 py-3 border rounded-xl"
+                className="w-full min-w-0 max-w-full mt-1 px-3 sm:px-4 py-3 border rounded-xl"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 required
@@ -250,7 +250,7 @@ export default function PromoterIncidencesPage() {
               </label>
               <input
                 type="date"
-                className="w-full mt-1 px-4 py-3 border rounded-xl"
+                className="w-full min-w-0 max-w-full mt-1 px-3 sm:px-4 py-3 border rounded-xl"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
@@ -261,7 +261,7 @@ export default function PromoterIncidencesPage() {
                 Motivo
               </label>
               <textarea
-                className="w-full mt-1 px-4 py-3 border rounded-xl"
+                className="w-full min-w-0 max-w-full mt-1 px-3 sm:px-4 py-3 border rounded-xl"
                 rows={4}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
@@ -278,7 +278,7 @@ export default function PromoterIncidencesPage() {
                 <input
                   type="file"
                   accept="image/*,.pdf"
-                  className="w-full mt-1 px-4 py-3 border rounded-xl"
+                  className="w-full min-w-0 max-w-full mt-1 px-3 sm:px-4 py-3 border rounded-xl"
                   onChange={(e) => setFile(e.target.files?.[0] || null)}
                   required
                 />
@@ -293,7 +293,7 @@ export default function PromoterIncidencesPage() {
                 <input
                   type="file"
                   accept="image/*,.pdf"
-                  className="w-full mt-1 px-4 py-3 border rounded-xl"
+                  className="w-full min-w-0 max-w-full mt-1 px-3 sm:px-4 py-3 border rounded-xl"
                   onChange={(e) => setFile(e.target.files?.[0] || null)}
                 />
               </div>
@@ -397,7 +397,7 @@ export default function PromoterIncidencesPage() {
                   {state === "REJECTED" && (
                     <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800 break-words">
                       <p className="font-semibold">Motivo de rechazo{rejectedBySupervisor ? " (Supervisor)" : rejectedByRH ? " (RH)" : ""}</p>
-                      <p className="whitespace-pre-wrap">{rejectionComment?.trim() || "No se registró un motivo de rechazo."}</p>
+                      <p className="whitespace-pre-wrap break-words">{rejectionComment?.trim() || "No se registró un motivo de rechazo."}</p>
                     </div>
                   )}
                 </article>

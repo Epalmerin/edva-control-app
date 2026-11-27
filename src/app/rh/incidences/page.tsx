@@ -501,10 +501,10 @@ const [accounts, setAccounts] = useState<
   ];
 
   return (
-    <main className="min-h-screen bg-neutral-100 flex">
-      <Sidebar userName="Recursos Humanos" role="RH" />
+    <main className="min-h-screen bg-neutral-100 flex flex-col md:flex-row">
+      <Sidebar userName="Recursos Humanos" role="RH" collapsible />
 
-      <section className="flex-1 min-w-0 px-6 py-6 xl:px-8">
+      <section className="w-full md:w-auto flex-1 min-w-0 px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
 
         {/* ENCABEZADO */}
 
@@ -524,11 +524,11 @@ const [accounts, setAccounts] = useState<
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex flex-col lg:flex-row lg:flex-wrap gap-2 min-w-0">
             <select
               value={selectedAccount}
               onChange={(event) => setSelectedAccount(event.target.value)}
-              className="h-10 min-w-[250px] px-3 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-semibold outline-none focus:border-neutral-500"
+              className="h-10 w-full min-w-0 lg:w-auto lg:max-w-full px-3 rounded-lg border border-neutral-300 bg-white text-neutral-700 text-sm font-semibold outline-none focus:border-neutral-500"
             >
               <option value="ALL">Todas las cuentas</option>
               {accounts.map((account) => (
@@ -767,7 +767,7 @@ const [accounts, setAccounts] = useState<
                                 Motivo
                               </p>
 
-                              <p className="text-sm text-neutral-700 mt-2 whitespace-pre-wrap">
+                              <p className="text-sm text-neutral-700 mt-2 whitespace-pre-wrap break-words">
                                 {incidence.reason ||
                                   "Sin motivo registrado"}
                               </p>
@@ -834,7 +834,7 @@ const [accounts, setAccounts] = useState<
                                     Comentario
                                   </p>
 
-                                  <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap">
+                                  <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap break-words">
                                     {
                                       incidence
                                         .supervisor_comment
@@ -889,7 +889,7 @@ const [accounts, setAccounts] = useState<
                                       Comentario
                                     </p>
 
-                                    <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap">
+                                    <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap break-words">
                                       {
                                         incidence
                                           .rh_comment
