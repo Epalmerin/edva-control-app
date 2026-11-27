@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 
 import { supabase } from "@/lib/supabase";
+import { loadApprovedIncidences, groupApprovedIncidences, approvedIncidenceLabels, type ApprovedIncidence } from "@/lib/attendance-incidences";
 
 
 
@@ -219,6 +220,9 @@ function formatMexicoTime(date: string) {
 export default function AdminAttendancePage() {
 
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [justifications, setJustifications] = useState<{name:string; id:string; incidences:ApprovedIncidence[]}[]>([]);
+  const [justificationError, setJustificationError] = useState("");
+  const [justificationLoading, setJustificationLoading] = useState(true);
 
   const [loading, setLoading] = useState(true);
 
@@ -392,6 +396,37 @@ export default function AdminAttendancePage() {
   }, [selectedAccount]);
 
 
+
+  useEffect(() => {
+    let cancelled = false;
+    setJustifications([]);
+    setJustificationError("");
+    setJustificationLoading(true);
+    async function load() {
+      try {
+        let ids: string[] | null = null;
+        if (selectedAccount !== "ALL") {
+          const {data, error} = await supabase.from("account_employees").select("employee_id").eq("account_id",selectedAccount).eq("active",true);
+          if (error) throw error;
+          ids = (data || []).map(row => row.employee_id);
+        }
+        if (ids && !ids.length) return;
+        let query = supabase.from("profiles").select("id,name").eq("role","PROMOTOR").eq("active",true);
+        if (ids) query = query.in("id",ids);
+        const {data: people, error} = await query;
+        if (error) throw error;
+        const approved = await loadApprovedIncidences(selectedDate,(people || []).map(p => p.id));
+        const grouped = groupApprovedIncidences(approved);
+        if (!cancelled) setJustifications((people || []).filter(p => grouped.has(p.id)).map(p => ({id:p.id,name:p.name,incidences:grouped.get(p.id) || []})));
+      } catch {
+        if (!cancelled) setJustificationError("No se pudieron consultar las incidencias autorizadas.");
+      } finally {
+        if (!cancelled) setJustificationLoading(false);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [selectedAccount, selectedDate, loading]);
 
   const accountRecords = useMemo(() => {
     if (selectedAccount === "ALL") return records;
@@ -776,6 +811,17 @@ export default function AdminAttendancePage() {
         </div>
 
 
+
+        <div className="bg-white rounded-2xl shadow-md p-4 mb-6">
+          <h2 className="text-lg font-bold text-neutral-800">Incidencias autorizadas del día</h2>
+          <p className="text-sm text-neutral-500 mt-1">No requieren entrada; las checadas reales se conservan.</p>
+          {loading || justificationLoading ? <p className="mt-3 text-sm">Consultando...</p> : message || justificationError ? <p className="mt-3 text-sm text-red-700">{justificationError || "No se pudo confirmar la asistencia."}</p> : justifications.length === 0 ? <p className="mt-3 text-sm text-neutral-500">Sin incidencias autorizadas.</p> : (
+            <div className="mt-3 divide-y">{justifications.map(person => {
+              const reported = accountRecords.some(record => record.employee_id === person.id && record.type === "ENTRY");
+              return <div key={person.id} className="py-3 flex flex-wrap justify-between gap-2"><div><p className="font-semibold text-sm">{person.name}</p><p className="text-sm text-indigo-700">{approvedIncidenceLabels(person.incidences)}</p></div><span className="text-sm text-neutral-600">{reported ? "Entrada registrada" : "Ausencia justificada"}</span></div>;
+            })}</div>
+          )}
+        </div>
 
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
 
