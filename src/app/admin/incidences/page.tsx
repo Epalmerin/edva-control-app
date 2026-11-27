@@ -160,9 +160,9 @@ export default function AdminIncidencesPage() {
     {value:"REJECTED",label:"Rechazadas",count:counts.no}
   ];
 
-  return <main className="min-h-screen bg-neutral-100 flex">
-    <Sidebar userName="Eduardo Palmerin"/>
-    <section className="flex-1 min-w-0 px-6 py-6 xl:px-8">
+  return <main className="min-h-screen bg-neutral-100 flex flex-col md:flex-row">
+    <Sidebar userName="Eduardo Palmerin" collapsible />
+    <section className="w-full md:w-auto flex-1 min-w-0 px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
       <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4 mb-5">
         <div>
           <p className="text-xs font-semibold tracking-[0.16em] text-neutral-400 uppercase">Gestión de personal</p>
@@ -211,7 +211,7 @@ export default function AdminIncidencesPage() {
                 <div className="space-y-3">
                   <div className="bg-white border rounded-xl p-4">
                     <p className="text-xs font-bold text-neutral-400 uppercase">Motivo</p>
-                    <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap">{i.reason||"Sin motivo registrado"}</p>
+                    <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap break-words">{i.reason||"Sin motivo registrado"}</p>
                     <p className="text-xs text-neutral-400 mt-3">Registrada: {fmtDateTime(i.created_at)}</p>
                     {i.file_url&&<ProtectedFileLink reference={i.file_url} className="inline-flex mt-3 px-3 py-2 rounded-lg bg-neutral-900 text-white text-xs font-semibold">Ver archivo adjunto</ProtectedFileLink>}
                   </div>
