@@ -1,4 +1,4 @@
-export type AttendanceState = "reported" | "rest" | "pending";
+export type AttendanceState = "reported" | "rest" | "justified" | "pending";
 
 // The selected date is a calendar date, not an instant in the browser's timezone.
 // rest_days uses ISO weekdays: Monday = 1, Sunday = 7. Null means unconfigured.
@@ -15,9 +15,11 @@ export function isRestDay(date: string, restDays: number[] | null | undefined) {
 export function getAttendanceState(
   date: string,
   restDays: number[] | null | undefined,
-  hasEntry: boolean
+  hasEntry: boolean,
+  hasApprovedIncidence = false
 ): AttendanceState {
   // Keep real entries visible even when someone works on their scheduled rest day.
   if (hasEntry) return "reported";
+  if (hasApprovedIncidence) return "justified";
   return isRestDay(date, restDays) ? "rest" : "pending";
 }
